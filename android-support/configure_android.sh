@@ -100,6 +100,40 @@ PY_ANDROID
 
 mkdir -p android/app/src/main/java/com/example/masterme4a_bot_control
 cp android-support/MainActivity.java android/app/src/main/java/com/example/masterme4a_bot_control/MainActivity.java
+cp android-support/BotKeepAliveService.java android/app/src/main/java/com/example/masterme4a_bot_control/BotKeepAliveService.java
 rm -f android/app/src/main/kotlin/com/example/masterme4a_bot_control/MainActivity.kt
 
-echo "Configured MCProtocolLib 1.21.4-1 and native bot bridge."
+# Configure foreground-service and wake-lock permissions for persistent bot sessions.
+python3 <<'PY_KEEPALIVE'
+from pathlib import Path
+import re
+
+manifest = Path("android/app/src/main/AndroidManifest.xml")
+text = manifest.read_text()
+permissions = [
+    "android.permission.FOREGROUND_SERVICE",
+    "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
+    "android.permission.WAKE_LOCK",
+    "android.permission.POST_NOTIFICATIONS",
+]
+for permission in permissions:
+    if permission not in text:
+        entry = '    <uses-permission android:name="' + permission + '" />'
+        text = re.sub(r"(<manifest\\b[^>]*>)", r"\\1\\n" + entry, text, count=1)
+
+service = """    <service
+        android:name="com.example.masterme4a_bot_control.BotKeepAliveService"
+        android:exported="false"
+        android:stopWithTask="false"
+        android:foregroundServiceType="specialUse">
+        <property
+            android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+            android:value="Maintains user-requested Minecraft bot network sessions while the screen is off" />
+    </service>
+"""
+if "BotKeepAliveService" not in text:
+    text = text.replace("</application>", service + "</application>", 1)
+manifest.write_text(text)
+PY_KEEPALIVE
+
+echo "Configured MCProtocolLib, native bridge, and background keep-alive service."

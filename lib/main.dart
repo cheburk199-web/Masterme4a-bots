@@ -799,7 +799,7 @@ class InventoryScreen extends StatelessWidget {
     final valid = indexes.where((i) => i >= 0 && i < slots.length).toList();
     return LayoutBuilder(builder: (context, constraints) {
       const gap = 5.0;
-      final cell = ((constraints.maxWidth - gap * (columns - 1)) / columns).clamp(28.0, 48.0);
+      final cell = ((constraints.maxWidth - gap * (columns - 1)) / columns).clamp(28.0, 48.0).toDouble();
       return GridView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),

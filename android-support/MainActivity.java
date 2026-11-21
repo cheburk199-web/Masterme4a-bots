@@ -11,6 +11,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.Arrays;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import org.geysermc.mcprotocollib.protocol.codec.MinecraftCodecHelper;
+import org.geysermc.mcprotocollib.protocol.data.game.chunk.ChunkSection;
 
 import io.flutter.embedding.android.FlutterActivity;
 import io.flutter.embedding.engine.FlutterEngine;
@@ -61,6 +66,7 @@ public class MainActivity extends FlutterActivity {
         volatile double playerX = 0, playerY = 0, playerZ = 0;
         volatile float playerYaw = 0, playerPitch = 0;
         volatile boolean hasPosition = false;
+        volatile MinecraftCodecHelper codecHelper;
     }
 
     @Override
@@ -149,6 +155,7 @@ public class MainActivity extends FlutterActivity {
                 if (routes.get(botId) != route) return;
                 emit(botId, "Инициализирую протокол Minecraft 1.21.4…", "connecting");
                 MinecraftProtocol protocol = new MinecraftProtocol(nickname);
+                route.codecHelper = protocol.createHelper();
 
                 emit(botId, "Создаю сетевую сессию…", "connecting");
                 session = ClientNetworkSessionFactory.factory()
@@ -185,6 +192,7 @@ public class MainActivity extends FlutterActivity {
                             route.chunkDataBytes += chunk.getChunkData().length;
                             route.lastChunkX = chunk.getX();
                             route.lastChunkZ = chunk.getZ();
+                            decodeAndEmitChunk(botId, route, chunk);
                             emitWorld(botId, route);
                         } else if (packet instanceof ClientboundForgetLevelChunkPacket forget) {
                             route.loadedChunks.remove((((long) forget.getX()) << 32) ^ (forget.getZ() & 0xffffffffL));
@@ -272,6 +280,60 @@ public class MainActivity extends FlutterActivity {
         }, "masterme4a-watchdog-" + botId);
         watchdog.setDaemon(true);
         watchdog.start();
+    }
+
+    // Decode the received chunk section palettes into a compact top-down block map.
+    // Block state IDs are real server data; texture names/atlas are a later renderer step.
+    private void decodeAndEmitChunk(int botId, BotRoute route, ClientboundLevelChunkWithLightPacket packet) {
+        if (route.codecHelper == null) return;
+        ByteBuf data = Unpooled.wrappedBuffer(packet.getChunkData());
+        int[] topStates = new int[256];
+        int[] topHeights = new int[256];
+        Arrays.fill(topHeights, Integer.MIN_VALUE);
+        int sectionIndex = 0;
+        try {
+            while (data.isReadable() && sectionIndex < 32) {
+                ChunkSection section = route.codecHelper.readChunkSection(data);
+                int sectionBaseY = (sectionIndex - 4) * 16; // vanilla Overworld section range starts at -4
+                for (int localY = 0; localY < 16; localY++) {
+                    for (int localZ = 0; localZ < 16; localZ++) {
+                        for (int localX = 0; localX < 16; localX++) {
+                            int state = section.getBlock(localX, localY, localZ);
+                            int index = localZ * 16 + localX;
+                            if (state != 0 && sectionBaseY + localY > topHeights[index]) {
+                                topStates[index] = state;
+                                topHeights[index] = sectionBaseY + localY;
+                            }
+                        }
+                    }
+                }
+                sectionIndex++;
+            }
+            emitChunk(botId, packet.getX(), packet.getZ(), topStates, topHeights);
+        } catch (Exception e) {
+            emitEvent(botId, "Не удалось разобрать чанк: " + e.getMessage(), "chunk-decode");
+        } finally {
+            data.release();
+        }
+    }
+
+    private void emitChunk(int botId, int chunkX, int chunkZ, int[] states, int[] heights) {
+        mainHandler.post(() -> {
+            if (channel == null) return;
+            java.util.HashMap<String, Object> payload = new java.util.HashMap<>();
+            payload.put("botId", botId);
+            payload.put("chunkX", chunkX);
+            payload.put("chunkZ", chunkZ);
+            java.util.ArrayList<Integer> stateList = new java.util.ArrayList<>(256);
+            java.util.ArrayList<Integer> heightList = new java.util.ArrayList<>(256);
+            for (int i = 0; i < 256; i++) {
+                stateList.add(states[i]);
+                heightList.add(heights[i] == Integer.MIN_VALUE ? -65 : heights[i]);
+            }
+            payload.put("states", stateList);
+            payload.put("heights", heightList);
+            channel.invokeMethod("botChunk", payload);
+        });
     }
 
     private BotRoute requireMovableRoute(int botId) {

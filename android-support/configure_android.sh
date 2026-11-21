@@ -17,6 +17,18 @@ if not root.exists():
 if not root.exists():
     raise SystemExit("Android root Gradle file not found")
 
+open_collab_repo = "https://repo.opencollab.dev/main/"
+if open_collab_repo not in root_text:
+    if root.name.endswith(".kts"):
+        open_collab_line = '        maven("https://repo.opencollab.dev/main/")'
+    else:
+        open_collab_line = "        maven { url 'https://repo.opencollab.dev/main/' }"
+    pattern = r"(allprojects\\s*\\{\\s*repositories\\s*\\{)"
+    root_text, count = re.subn(pattern, lambda match: match.group(1) + "\\n" + open_collab_line, root_text, count=1)
+    if count == 0:
+        raise SystemExit("Could not add OpenCollab to project repositories")
+    root.write_text(root_text)
+
 repo = "https://jitpack.io"
 root_text = root.read_text()
 if repo not in root_text:

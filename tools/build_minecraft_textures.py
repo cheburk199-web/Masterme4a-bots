@@ -135,6 +135,51 @@ def resolve_model_texture(model_name, visited=None):
     return None
 
 
+
+def resolve_model_face_textures(model_name, visited=None):
+    """Resolve per-face PNGs, including inherited parent model textures."""
+    visited = set() if visited is None else visited
+    model_name = model_name.removeprefix("minecraft:").removeprefix("block/")
+    if model_name in visited:
+        return {}
+    visited.add(model_name)
+    path = MODELS_ROOT / (model_name + ".json")
+    if not path.exists():
+        return {}
+    model = json.loads(path.read_text(encoding="utf-8"))
+    textures = model.get("textures", {})
+    result = {}
+    for element in model.get("elements", []):
+        for face, spec in element.get("faces", {}).items():
+            value = spec.get("texture")
+            if not isinstance(value, str):
+                continue
+            seen = set()
+            while value.startswith("#") and value[1:] not in seen:
+                key = value[1:]
+                seen.add(key)
+                value = textures.get(key, "")
+            if isinstance(value, str) and value:
+                value = value.removeprefix("minecraft:").removeprefix("block/")
+                result[face] = value
+    parent = model.get("parent")
+    if isinstance(parent, str):
+        inherited = resolve_model_face_textures(parent, visited)
+        inherited.update(result)
+        result = inherited
+    if not result:
+        # Cube-all and similar parents store their texture on the parent itself.
+        for key in ("all", "side", "top", "end", "particle"):
+            value = textures.get(key)
+            if isinstance(value, str):
+                while value.startswith("#"):
+                    value = textures.get(value[1:], "")
+                if value and not value.startswith("#"):
+                    value = value.removeprefix("minecraft:").removeprefix("block/")
+                    result = {face: value for face in ("up", "down", "north", "south", "east", "west")}
+                    break
+    return result
+
 def main():
     for folder in (TEXTURE_ROOT, BLOCKSTATES_ROOT, MODELS_ROOT):
         folder.mkdir(parents=True, exist_ok=True)
@@ -254,8 +299,9 @@ def main():
         for state_id in range(int(first), int(last) + 1):
             state_lookup[str(state_id)] = name
 
-    # Resolve each protocol block-state ID to a real PNG texture path.
+    # Resolve each protocol block-state ID to real per-face PNG textures.
     state_texture_lookup = {}
+    state_face_texture_lookup = {}
     for state_id, block_name in state_lookup.items():
         block_info = block_ranges.get(block_name, {})
         candidates = block_info.get("models", [])
@@ -269,12 +315,30 @@ def main():
             texture_path = "textures/block/" + texture_name + ".png"
             if (TEXTURE_ROOT / (texture_name + ".png")).exists():
                 state_texture_lookup[state_id] = texture_path
+        for model_name in candidates:
+            faces = resolve_model_face_textures(model_name)
+            usable = {
+                face: "textures/block/" + name + ".png"
+                for face, name in faces.items()
+                if (TEXTURE_ROOT / (name + ".png")).exists()
+            }
+            if usable:
+                state_face_texture_lookup[state_id] = usable
+                break
 
     if len(state_texture_lookup) < 500:
         raise SystemExit(
             "State-to-texture lookup looks incomplete; refusing to publish "
             f"({len(state_texture_lookup)} mapped states)"
         )
+    (ROOT / "state_face_texture_lookup.json").write_text(
+        json.dumps({
+            "minecraftVersion": VERSION,
+            "source": "Minecraft 1.21.4 block models per-face textures",
+            "states": state_face_texture_lookup,
+        }, separators=(",", ":")),
+        encoding="utf-8",
+    )
     (ROOT / "state_texture_lookup.json").write_text(
         json.dumps({
             "minecraftVersion": VERSION,

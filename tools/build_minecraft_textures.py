@@ -3,6 +3,7 @@
 import json
 import urllib.request
 import zipfile
+from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from PIL import Image
@@ -104,6 +105,15 @@ def install_faithful_textures():
     return manifest
 
 
+@lru_cache(maxsize=None)
+def load_model_json(model_name):
+    """Read each model JSON at most once during lookup generation."""
+    path = MODELS_ROOT / (model_name + ".json")
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def resolve_model_texture(model_name, visited=None):
     """Resolve a block model's representative face texture, following parents."""
     visited = set() if visited is None else visited
@@ -111,10 +121,9 @@ def resolve_model_texture(model_name, visited=None):
     if model_name in visited:
         return None
     visited.add(model_name)
-    path = MODELS_ROOT / (model_name + ".json")
-    if not path.exists():
+    model = load_model_json(model_name)
+    if model is None:
         return None
-    model = json.loads(path.read_text(encoding="utf-8"))
     textures = model.get("textures", {})
     # Prefer the visually representative full-block face.
     for key in ("all", "side", "top", "end", "front", "particle"):
@@ -143,10 +152,9 @@ def resolve_model_face_textures(model_name, visited=None):
     if model_name in visited:
         return {}
     visited.add(model_name)
-    path = MODELS_ROOT / (model_name + ".json")
-    if not path.exists():
+    model = load_model_json(model_name)
+    if model is None:
         return {}
-    model = json.loads(path.read_text(encoding="utf-8"))
     textures = model.get("textures", {})
     result = {}
     for element in model.get("elements", []):

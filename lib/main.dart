@@ -812,6 +812,7 @@ class InventoryScreen extends StatelessWidget {
           final slot = valid[index];
           final item = Map<String, dynamic>.from(slots[slot] as Map);
           return InventorySlotTile(
+            botId: botId,
             slot: slot,
             itemId: item['id'] as int? ?? -1,
             count: item['count'] as int? ?? 0,
@@ -824,6 +825,7 @@ class InventoryScreen extends StatelessWidget {
   Widget _itemCard(int slot, dynamic raw, {double width = 56}) {
     final item = Map<String, dynamic>.from(raw as Map);
     return SizedBox(width: width, child: InventorySlotTile(
+      botId: botId,
       slot: slot,
       itemId: item['id'] as int? ?? -1,
       count: item['count'] as int? ?? 0,
@@ -908,31 +910,85 @@ class InventoryScreen extends StatelessWidget {
 }
 
 class InventorySlotTile extends StatelessWidget {
-  const InventorySlotTile({super.key, required this.slot, required this.itemId, required this.count});
+  const InventorySlotTile({super.key, required this.botId, required this.slot, required this.itemId, required this.count});
+  final int botId;
   final int slot;
   final int itemId;
   final int count;
 
+  Future<void> _showActions(BuildContext context) async {
+    if (itemId < 0 || count <= 0) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: panel,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (sheetContext) => SafeArea(child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 42, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(5))),
+          const SizedBox(height: 16),
+          Text('Предмет $itemId', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+          Text('Слот $slot • Количество: $count', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+          const SizedBox(height: 16),
+          Row(children: [
+            Expanded(child: _actionButton(sheetContext, 'ЛКМ', Icons.mouse, 'left')),
+            const SizedBox(width: 8),
+            Expanded(child: _actionButton(sheetContext, 'ПКМ', Icons.ads_click, 'right')),
+          ]),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: _actionButton(sheetContext, 'Выкинуть 1', Icons.remove_circle_outline, 'drop')),
+            const SizedBox(width: 8),
+            Expanded(child: _actionButton(sheetContext, 'Выкинуть всё', Icons.delete_outline, 'dropStack')),
+          ]),
+        ]),
+      )),
+    );
+  }
+
+  Widget _actionButton(BuildContext context, String label, IconData icon, String action) => FilledButton.tonal(
+    onPressed: () async {
+      Navigator.of(context).pop();
+      try {
+        await const MethodChannel('masterme4a/bot_control').invokeMethod<bool>('inventoryClick', {
+          'botId': botId, 'slot': slot, 'action': action,
+        });
+      } on PlatformException catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message ?? 'Действие не выполнено')));
+      } catch (_) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Не удалось отправить действие')));
+      }
+    },
+    style: FilledButton.styleFrom(minimumSize: const Size(0, 48), backgroundColor: deepPurple),
+    child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+      Icon(icon, size: 17), const SizedBox(width: 6),
+      Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis)),
+    ]),
+  );
+
   @override
   Widget build(BuildContext context) {
     final empty = itemId < 0 || count <= 0;
-    return Container(
-      decoration: BoxDecoration(
-        color: empty ? const Color(0xFF171020) : const Color(0xFF34234A),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: empty ? Colors.white10 : purple.withOpacity(.48)),
-        boxShadow: empty ? null : [BoxShadow(color: purple.withOpacity(.08), blurRadius: 5)],
+    return GestureDetector(
+      onLongPress: empty ? null : () => _showActions(context),
+      child: Container(
+        decoration: BoxDecoration(
+          color: empty ? const Color(0xFF171020) : const Color(0xFF34234A),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: empty ? Colors.white10 : purple.withOpacity(.48)),
+          boxShadow: empty ? null : [BoxShadow(color: purple.withOpacity(.08), blurRadius: 5)],
+        ),
+        child: Stack(children: [
+          Positioned(left: 4, top: 3, child: Text('$slot', style: const TextStyle(color: Colors.white30, fontSize: 8))),
+          Center(child: Text(
+            empty ? '—' : '$itemId',
+            maxLines: 1, overflow: TextOverflow.fade,
+            style: TextStyle(color: empty ? Colors.white24 : Colors.white, fontSize: 11, fontWeight: FontWeight.w800),
+          )),
+          if (!empty) Positioned(right: 4, bottom: 3, child: Text('$count',
+            style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))),
+        ]),
       ),
-      child: Stack(children: [
-        Positioned(left: 4, top: 3, child: Text('$slot', style: const TextStyle(color: Colors.white30, fontSize: 8))),
-        Center(child: Text(
-          empty ? '—' : '$itemId',
-          maxLines: 1, overflow: TextOverflow.fade,
-          style: TextStyle(color: empty ? Colors.white24 : Colors.white, fontSize: 11, fontWeight: FontWeight.w800),
-        )),
-        if (!empty) Positioned(right: 4, bottom: 3, child: Text('$count',
-          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))),
-      ]),
     );
   }
 }

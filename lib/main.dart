@@ -1131,9 +1131,7 @@ class _LiveTexturedFirstPersonViewState extends State<_LiveTexturedFirstPersonVi
   );
 }
 
-/// Live first-person voxel raycaster. It renders the actual sparse 3D block-state
-/// data received for this bot. The current pass uses a higher-resolution color preview;
-/// vanilla PNG textures and block-model face mapping are a separate renderer step.
+/// Live first-person raycaster sampling real Faithful 32x PNG block textures.
 class _LiveFirstPersonPainter extends CustomPainter {
   _LiveFirstPersonPainter({required this.chunks, required this.playerX, required this.playerY,
     required this.playerZ, required this.yaw, required this.pitch,

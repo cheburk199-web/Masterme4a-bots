@@ -53,6 +53,57 @@ def model_references(blockstate):
     return sorted(found)
 
 
+def install_faithful_textures():
+    """Overlay the official Faithful 32x pack for Minecraft 1.21.4."""
+    from urllib.parse import quote
+    game_versions = quote(json.dumps([VERSION]), safe="")
+    versions = fetch_json(
+        "https://api.modrinth.com/v2/project/faithful-32x/version"
+        f"?game_versions={game_versions}"
+    )
+    candidates = [item for item in versions if VERSION in item.get("game_versions", []) and item.get("files")]
+    if not candidates:
+        raise SystemExit("No Faithful 32x release found for Minecraft " + VERSION)
+    release = max(candidates, key=lambda item: item.get("date_published", ""))
+    file_info = next((item for item in release["files"] if item.get("primary")), release["files"][0])
+    archive_bytes = fetch_bytes(file_info["url"])
+    expected = (file_info.get("hashes") or {}).get("sha512")
+    if expected:
+        import hashlib
+        if hashlib.sha512(archive_bytes).hexdigest().lower() != expected.lower():
+            raise SystemExit("Faithful 32x download SHA-512 verification failed")
+    copied = 0
+    with zipfile.ZipFile(BytesIO(archive_bytes)) as pack:
+        prefix = "assets/minecraft/textures/block/"
+        for info in pack.infolist():
+            name = info.filename
+            if info.is_dir() or not name.startswith(prefix) or not name.lower().endswith(".png"):
+                continue
+            relative = name[len(prefix):]
+            if not relative or ".." in Path(relative).parts:
+                continue
+            target = TEXTURE_ROOT / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            raw = pack.read(info)
+            with Image.open(BytesIO(raw)) as image:
+                image.verify()
+            target.write_bytes(raw)
+            copied += 1
+    if copied < 100:
+        raise SystemExit(f"Faithful 32x archive looked incomplete ({copied} block textures)")
+    manifest = {
+        "name": "Faithful 32x",
+        "version": release.get("version_number"),
+        "file": file_info.get("filename"),
+        "source": "https://modrinth.com/resourcepack/faithful-32x",
+        "release": "https://modrinth.com/resourcepack/faithful-32x/version/" + release.get("id", ""),
+        "license": "Faithful License",
+        "texturesOverlaid": copied,
+    }
+    (ROOT / "faithful_pack.json").write_text(json.dumps(manifest, separators=(",", ":")), encoding="utf-8")
+    return manifest
+
+
 def main():
     for folder in (TEXTURE_ROOT, BLOCKSTATES_ROOT, MODELS_ROOT):
         folder.mkdir(parents=True, exist_ok=True)
@@ -137,6 +188,18 @@ def main():
                 "elements": len(parsed.get("elements", [])),
             }
 
+    faithful_pack = install_faithful_textures()
+    # Refresh dimensions after overlay so the manifest describes Faithful PNGs.
+    texture_manifest = {}
+    for path in sorted(TEXTURE_ROOT.rglob("*.png")):
+        relative = path.relative_to(TEXTURE_ROOT).as_posix()
+        with Image.open(path) as image:
+            texture_manifest[relative.removesuffix(".png")] = {
+                "path": "textures/block/" + relative,
+                "width": image.width,
+                "height": image.height,
+                "animated": image.height > image.width and image.height % image.width == 0,
+            }
     # Prismarine's Java data supplies the same global block-state ID ranges
     # used by the 1.21.4 protocol palette decoded by MCProtocolLib.
     blocks = fetch_json(
@@ -169,7 +232,8 @@ def main():
     (ROOT / "block_textures.json").write_text(
         json.dumps({
             "minecraftVersion": VERSION,
-            "format": "original-png",
+            "format": "faithful-32x-overlay",
+            "resourcePack": faithful_pack,
             "textureCount": len(texture_manifest),
             "textures": texture_manifest,
         }, separators=(",", ":")),

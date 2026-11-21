@@ -515,10 +515,6 @@ class WorldScreen extends StatefulWidget {
 class _WorldScreenState extends State<WorldScreen> {
   final command = TextEditingController();
   Timer? refreshTimer;
-  double radarYaw = 0;
-  double radarZoom = 1.0;
-  Offset? lastDragPoint;
-
   @override
   void initState() {
     super.initState();
@@ -612,8 +608,8 @@ class _WorldScreenState extends State<WorldScreen> {
   );
 }
 
-/// Lightweight Minecraft-inspired 3D voxel demo rendered in Flutter.
-/// It is a visual demo scene, not a live 3D game client/world stream.
+/// First-person Minecraft-inspired voxel demo.
+/// This local demo is not the connected server's live world yet.
 class Demo3DScreen extends StatefulWidget {
   const Demo3DScreen({super.key});
   @override
@@ -718,7 +714,7 @@ class _Demo3DScreenState extends State<Demo3DScreen> {
                 Text('MINECRAFT • DEMO', style: TextStyle(color: purple, fontSize: 11, fontWeight: FontWeight.bold)),
               ]),
               const SizedBox(height: 8),
-              const Text('Потяни мышью или пальцем, чтобы осмотреться. Кнопки ниже перемещают камеру по блочному миру.',
+              const Text('Потяни мышью или пальцем, чтобы осмотреться. Кнопки ниже перемещают камеру. Это демонстрационная карта, не живой мир сервера.',
                 style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.35)),
               const SizedBox(height: 8),
               Row(mainAxisAlignment: MainAxisAlignment.center, children: [

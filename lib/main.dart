@@ -688,61 +688,9 @@ class _LiveWorldScreenState extends State<LiveWorldScreen> {
   }
 
   void _showInventory() {
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: panel,
-        title: const Text('ИНВЕНТАРЬ БОТА'),
-        content: SizedBox(
-          width: 420,
-          child: ValueListenableBuilder<Map<String, dynamic>>(
-            valueListenable: botInventoryNotifiers[widget.botId],
-            builder: (context, inventory, _) {
-              final slots = List<dynamic>.from(inventory['slots'] as List? ?? <dynamic>[]);
-              if (inventory['received'] != true || slots.isEmpty) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Text('Пока нет данных инвентаря. Подключи бота и дождись обновления от сервера.'),
-                );
-              }
-              List<int> validSlots(Iterable<int> values) => values.where((i) => i < slots.length).toList();
-              Widget section(String title, Iterable<int> indexes) {
-                final selected = validSlots(indexes);
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(title, style: const TextStyle(color: purple, fontWeight: FontWeight.bold, fontSize: 12)),
-                    const SizedBox(height: 7),
-                    Wrap(spacing: 5, runSpacing: 5, children: selected.map((slot) {
-                      final item = Map<String, dynamic>.from(slots[slot] as Map);
-                      final id = item['id'] as int? ?? -1;
-                      final count = item['count'] as int? ?? 0;
-                      return Container(
-                        width: 48, height: 48,
-                        decoration: BoxDecoration(color: deepPurple, borderRadius: BorderRadius.circular(7), border: Border.all(color: Colors.white12)),
-                        child: Stack(children: [
-                          Center(child: Text(id < 0 || count <= 0 ? '·' : '#$id', style: TextStyle(color: count <= 0 ? Colors.white24 : Colors.white, fontSize: 11, fontWeight: FontWeight.bold))),
-                          Positioned(left: 3, top: 2, child: Text('$slot', style: const TextStyle(color: Colors.white38, fontSize: 8))),
-                          if (count > 0) Positioned(right: 3, bottom: 2, child: Text('$count', style: const TextStyle(color: Colors.white, fontSize: 10))),
-                        ]),
-                      );
-                    }).toList()),
-                  ]),
-                );
-              }
-              return SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                section('БРОНЯ (слоты 5–8)', List.generate(4, (i) => i + 5)),
-                section('ОСНОВНОЙ ИНВЕНТАРЬ (9–35)', List.generate(27, (i) => i + 9)),
-                section('ПАНЕЛЬ БЫСТРОГО ДОСТУПА (36–44)', List.generate(9, (i) => i + 36)),
-                section('ЛЕВАЯ РУКА (45)', [45]),
-                section('КРАФТИНГ (0–4)', List.generate(5, (i) => i)),
-              ]));
-            },
-          ),
-        ),
-        actions: [TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Закрыть'))],
-      ),
-    );
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => InventoryScreen(botId: widget.botId),
+    ));
   }
 
   @override
@@ -832,6 +780,162 @@ class _LiveWorldScreenState extends State<LiveWorldScreen> {
   );
 }
 
+
+/// Dedicated, responsive inventory page. Item sprites/names are not available from
+/// the current native bridge, so slots show the server item ID and stack count.
+class InventoryScreen extends StatelessWidget {
+  const InventoryScreen({super.key, required this.botId});
+  final int botId;
+
+  Widget _sectionTitle(String title, String trailing) => Padding(
+    padding: const EdgeInsets.fromLTRB(2, 18, 2, 9),
+    child: Row(children: [
+      Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: .7))),
+      Text(trailing, style: const TextStyle(color: Colors.white38, fontSize: 11)),
+    ]),
+  );
+
+  Widget _slotGrid(BuildContext context, List<dynamic> slots, List<int> indexes, {int columns = 9}) {
+    final valid = indexes.where((i) => i >= 0 && i < slots.length).toList();
+    return LayoutBuilder(builder: (context, constraints) {
+      const gap = 5.0;
+      final cell = ((constraints.maxWidth - gap * (columns - 1)) / columns).clamp(28.0, 48.0);
+      return GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: valid.length,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: columns, crossAxisSpacing: gap, mainAxisSpacing: gap,
+          mainAxisExtent: cell,
+        ),
+        itemBuilder: (context, index) {
+          final slot = valid[index];
+          final item = Map<String, dynamic>.from(slots[slot] as Map);
+          return InventorySlotTile(
+            slot: slot,
+            itemId: item['id'] as int? ?? -1,
+            count: item['count'] as int? ?? 0,
+          );
+        },
+      );
+    });
+  }
+
+  Widget _itemCard(int slot, dynamic raw, {double width = 56}) {
+    final item = Map<String, dynamic>.from(raw as Map);
+    return SizedBox(width: width, child: InventorySlotTile(
+      slot: slot,
+      itemId: item['id'] as int? ?? -1,
+      count: item['count'] as int? ?? 0,
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      backgroundColor: deepPurple,
+      title: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('ИНВЕНТАРЬ', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
+        Text('BOT • ЖИВЫЕ ДАННЫЕ', style: TextStyle(color: purple, fontSize: 10, letterSpacing: 1)),
+      ]),
+    ),
+    body: SafeArea(child: ValueListenableBuilder<Map<String, dynamic>>(
+      valueListenable: botInventoryNotifiers[botId],
+      builder: (context, inventory, _) {
+        final slots = List<dynamic>.from(inventory['slots'] as List? ?? <dynamic>[]);
+        if (inventory['received'] != true || slots.length < 46) {
+          return Center(child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(width: 76, height: 76, decoration: BoxDecoration(color: panel, borderRadius: BorderRadius.circular(24)),
+                child: const Icon(Icons.inventory_2_outlined, color: purple, size: 38)),
+              const SizedBox(height: 18),
+              const Text('Инвентарь пока пуст', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              const Text('Подключи бота к серверу и подожди, пока сервер отправит содержимое инвентаря.',
+                textAlign: TextAlign.center, style: TextStyle(color: Colors.white60, height: 1.4)),
+            ]),
+          ));
+        }
+        return ListView(padding: const EdgeInsets.fromLTRB(14, 12, 14, 24), children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [Color(0xFF39215C), Color(0xFF241638)]),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: purple.withOpacity(.35)),
+            ),
+            child: Row(children: [
+              const Icon(Icons.inventory_2, color: purple, size: 28),
+              const SizedBox(width: 12),
+              const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Инвентарь бота', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                SizedBox(height: 3),
+                Text('Слоты обновляются при изменениях на сервере', style: TextStyle(color: Colors.white60, fontSize: 11)),
+              ])),
+              const Icon(Icons.circle, color: Colors.greenAccent, size: 9),
+            ]),
+          ),
+          _sectionTitle('ЭКИПИРОВКА', '4 слота'),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            for (final slot in [5, 6, 7, 8]) _itemCard(slot, slots[slot], width: 56),
+          ]),
+          _sectionTitle('ОСНОВНОЙ ИНВЕНТАРЬ', '27 слотов'),
+          _slotGrid(context, slots, List.generate(27, (i) => i + 9)),
+          _sectionTitle('БЫСТРЫЙ ДОСТУП', '9 слотов'),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: panel, borderRadius: BorderRadius.circular(14)),
+            child: _slotGrid(context, slots, List.generate(9, (i) => i + 36)),
+          ),
+          _sectionTitle('ВТОРАЯ РУКА', '1 слот'),
+          Align(alignment: Alignment.centerLeft, child: _itemCard(45, slots[45], width: 56)),
+          _sectionTitle('КРАФТИНГ', '2 × 2'),
+          Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+            Expanded(child: _slotGrid(context, slots, [1, 2, 3, 4], columns: 2)),
+            const SizedBox(width: 12),
+            const Icon(Icons.arrow_forward, color: purple),
+            const SizedBox(width: 12),
+            _itemCard(0, slots[0], width: 56),
+          ]),
+          const SizedBox(height: 18),
+          const Text('Пока предметы показаны по ID протокола. Названия и игровые текстуры добавим отдельным обновлением.',
+            style: TextStyle(color: Colors.white38, fontSize: 11, height: 1.4)),
+        ]);
+      },
+    )),
+  );
+}
+
+class InventorySlotTile extends StatelessWidget {
+  const InventorySlotTile({super.key, required this.slot, required this.itemId, required this.count});
+  final int slot;
+  final int itemId;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final empty = itemId < 0 || count <= 0;
+    return Container(
+      decoration: BoxDecoration(
+        color: empty ? const Color(0xFF171020) : const Color(0xFF34234A),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: empty ? Colors.white10 : purple.withOpacity(.48)),
+        boxShadow: empty ? null : [BoxShadow(color: purple.withOpacity(.08), blurRadius: 5)],
+      ),
+      child: Stack(children: [
+        Positioned(left: 4, top: 3, child: Text('$slot', style: const TextStyle(color: Colors.white30, fontSize: 8))),
+        Center(child: Text(
+          empty ? '—' : '$itemId',
+          maxLines: 1, overflow: TextOverflow.fade,
+          style: TextStyle(color: empty ? Colors.white24 : Colors.white, fontSize: 11, fontWeight: FontWeight.w800),
+        )),
+        if (!empty) Positioned(right: 4, bottom: 3, child: Text('$count',
+          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))),
+      ]),
+    );
+  }
+}
 
 /// Top-down live chunk visualization using actual block state IDs from the server.
 /// Textures are not mapped yet; height and block distribution are live.

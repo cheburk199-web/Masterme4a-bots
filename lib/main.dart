@@ -305,8 +305,8 @@ class _DashboardState extends State<Dashboard> {
       ]),
       actions: [
         IconButton(
-          tooltip: 'Экран мира',
-          icon: const Icon(Icons.public, color: purple),
+          tooltip: 'Чат и команды',
+          icon: const Icon(Icons.terminal, color: purple),
           onPressed: () => Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => WorldScreen(
               botName: current.nickname.text,
@@ -317,8 +317,8 @@ class _DashboardState extends State<Dashboard> {
           )),
         ),
         IconButton(
-          tooltip: '3D демонстрация',
-          icon: const Icon(Icons.view_in_ar, color: purple),
+          tooltip: 'Minecraft от первого лица',
+          icon: const Icon(Icons.videogame_asset, color: purple),
           onPressed: () => Navigator.of(context).push(MaterialPageRoute(
             builder: (_) => const Demo3DScreen(),
           )),
@@ -547,7 +547,7 @@ class _WorldScreenState extends State<WorldScreen> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       backgroundColor: deepPurple,
-      title: const Text('ЭКРАН МИРА', style: TextStyle(fontWeight: FontWeight.w800)),
+      title: const Text('ЧАТ И КОМАНДЫ', style: TextStyle(fontWeight: FontWeight.w800)),
     ),
     body: SafeArea(child: ListView(
       padding: const EdgeInsets.all(14),
@@ -562,60 +562,6 @@ class _WorldScreenState extends State<WorldScreen> {
               const SizedBox(height: 4),
               Text(widget.botStatus, style: const TextStyle(color: Colors.white70)),
             ])),
-          ]),
-        )),
-        const SizedBox(height: 12),
-        Card(color: panel, child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('РАДАР / ВИД СВЕРХУ', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
-            const SizedBox(height: 10),
-            AspectRatio(
-              aspectRatio: 1.05,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.grab,
-                  child: GestureDetector(
-                    onPanStart: (details) => lastDragPoint = details.localPosition,
-                    onPanUpdate: (details) {
-                      final previous = lastDragPoint ?? details.localPosition;
-                      final delta = details.localPosition - previous;
-                      lastDragPoint = details.localPosition;
-                      setState(() {
-                        radarYaw += delta.dx * 0.012;
-                        radarYaw = ((radarYaw + math.pi) % (math.pi * 2)) - math.pi;
-                        radarZoom = (radarZoom + delta.dy * 0.003).clamp(0.6, 1.8).toDouble();
-                      });
-                    },
-                    onPanEnd: (_) => lastDragPoint = null,
-                    child: CustomPaint(
-                      painter: _WorldRadarPainter(yaw: radarYaw, zoom: radarZoom),
-                      child: const Center(child: Text('BOT', style: TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12,
-                      ))),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(children: [
-              const Text('ПОВОРОТ', style: TextStyle(color: Colors.white70, fontSize: 11)),
-              Expanded(child: Slider(
-                value: radarYaw,
-                min: -math.pi,
-                max: math.pi,
-                onChanged: (value) => setState(() => radarYaw = value),
-              )),
-              IconButton(
-                tooltip: 'Сбросить обзор',
-                onPressed: () => setState(() { radarYaw = 0; radarZoom = 1; }),
-                icon: const Icon(Icons.center_focus_strong, color: purple),
-              ),
-            ]),
-            const Text('Зажми и веди мышью или пальцем по радару: горизонтально — вращение, вертикально — масштаб. Бот пока остаётся в центре.',
-              style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.35)),
           ]),
         )),
         const SizedBox(height: 12),
@@ -666,80 +612,6 @@ class _WorldScreenState extends State<WorldScreen> {
   );
 }
 
-class _WorldRadarPainter extends CustomPainter {
-  _WorldRadarPainter({required this.yaw, required this.zoom});
-  final double yaw;
-  final double zoom;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final background = Paint()..color = const Color(0xFF10091B);
-    canvas.drawRect(Offset.zero & size, background);
-
-    final grid = Paint()
-      ..color = const Color(0xFF51376D)
-      ..strokeWidth = 1;
-    const cell = 28.0;
-    for (double x = 0; x <= size.width; x += cell) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
-    }
-    for (double y = 0; y <= size.height; y += cell) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
-    }
-
-    final center = Offset(size.width / 2, size.height / 2);
-    canvas.save();
-    canvas.translate(center.dx, center.dy);
-    canvas.rotate(yaw);
-    canvas.scale(zoom);
-    canvas.translate(-center.dx, -center.dy);
-    final rings = Paint()
-      ..color = const Color(0xFF9B5CFF).withOpacity(.45)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-    for (double radius = 35; radius < size.width * .48; radius += 35) {
-      canvas.drawCircle(center, radius, rings);
-    }
-    final cross = Paint()
-      ..color = const Color(0xFF9B5CFF)
-      ..strokeWidth = 1.5;
-    canvas.drawLine(Offset(center.dx, 0), Offset(center.dx, size.height), cross);
-    canvas.drawLine(Offset(0, center.dy), Offset(size.width, center.dy), cross);
-
-    final direction = Paint()..color = const Color(0xFF9B5CFF).withOpacity(.22);
-    final cone = Path()
-      ..moveTo(center.dx, center.dy)
-      ..lineTo(center.dx - 42, center.dy - 70)
-      ..lineTo(center.dx + 42, center.dy - 70)
-      ..close();
-    canvas.drawPath(cone, direction);
-    canvas.restore();
-
-    final marker = Paint()..color = const Color(0xFFB98AFF);
-    final bot = Path()
-      ..moveTo(center.dx, center.dy - 13)
-      ..lineTo(center.dx - 11, center.dy + 10)
-      ..lineTo(center.dx + 11, center.dy + 10)
-      ..close();
-    canvas.drawPath(bot, marker);
-    canvas.drawCircle(center, 15, Paint()
-      ..color = const Color(0xFFB98AFF)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2);
-    final label = TextPainter(
-      text: const TextSpan(text: 'N', style: TextStyle(
-        color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold,
-      )),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    label.paint(canvas, Offset(size.width - label.width - 8, 8));
-  }
-
-  @override
-  bool shouldRepaint(covariant _WorldRadarPainter oldDelegate) => oldDelegate.yaw != yaw || oldDelegate.zoom != zoom;
-}
-
-
 /// Lightweight Minecraft-inspired 3D voxel demo rendered in Flutter.
 /// It is a visual demo scene, not a live 3D game client/world stream.
 class Demo3DScreen extends StatefulWidget {
@@ -749,25 +621,34 @@ class Demo3DScreen extends StatefulWidget {
 }
 
 class _Demo3DScreenState extends State<Demo3DScreen> {
-  double yaw = -0.65;
-  double pitch = 0.42;
+  double yaw = 0;
+  double pitch = 0.08;
   double zoom = 1.0;
+  double cameraX = 0;
+  double cameraZ = 9;
   Offset? dragOrigin;
   double startYaw = 0;
   double startPitch = 0;
   double startZoom = 1;
 
   void resetView() => setState(() {
-    yaw = -0.65;
-    pitch = 0.42;
+    yaw = 0;
+    pitch = 0.08;
     zoom = 1;
+    cameraX = 0;
+    cameraZ = 9;
+  });
+
+  void moveCamera(double forward, double strafe) => setState(() {
+    cameraX += -math.sin(yaw) * forward + math.cos(yaw) * strafe;
+    cameraZ += -math.cos(yaw) * forward - math.sin(yaw) * strafe;
   });
 
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       backgroundColor: deepPurple,
-      title: const Text('3D ДЕМОНСТРАЦИЯ', style: TextStyle(fontWeight: FontWeight.w800)),
+      title: const Text('MINECRAFT • ПЕРВОЕ ЛИЦО', style: TextStyle(fontWeight: FontWeight.w800)),
       actions: [
         IconButton(
           tooltip: 'Сбросить вид',
@@ -808,8 +689,14 @@ class _Demo3DScreenState extends State<Demo3DScreen> {
                 onScaleEnd: (_) => dragOrigin = null,
                 child: CustomPaint(
                   size: Size(constraints.maxWidth, constraints.maxHeight),
-                  painter: _VoxelDemoPainter(yaw: yaw, pitch: pitch, zoom: zoom),
-                  child: const SizedBox.expand(),
+                  painter: _VoxelDemoPainter(yaw: yaw, pitch: pitch, zoom: zoom, cameraX: cameraX, cameraZ: cameraZ),
+                  child: Stack(children: [
+                    const SizedBox.expand(),
+                    Center(child: IgnorePointer(child: Text('+', style: TextStyle(
+                      color: Colors.white.withOpacity(.8), fontSize: 24, fontWeight: FontWeight.w300,
+                      shadows: [Shadow(color: Colors.black, blurRadius: 4)],
+                    )))),
+                  ]),
                 ),
               );
             }),
@@ -826,24 +713,37 @@ class _Demo3DScreenState extends State<Demo3DScreen> {
               const Row(children: [
                 Icon(Icons.view_in_ar, color: purple),
                 SizedBox(width: 8),
-                Text('ВОКСЕЛЬНЫЙ МИР', style: TextStyle(fontWeight: FontWeight.bold)),
+                Text('ВИД ОТ ПЕРВОГО ЛИЦА', style: TextStyle(fontWeight: FontWeight.bold)),
                 Spacer(),
-                Text('3D • DEMO', style: TextStyle(color: purple, fontSize: 11, fontWeight: FontWeight.bold)),
+                Text('MINECRAFT • DEMO', style: TextStyle(color: purple, fontSize: 11, fontWeight: FontWeight.bold)),
               ]),
               const SizedBox(height: 8),
-              const Text('Перетаскивай пальцем или мышью, чтобы вращать сцену. Используй два пальца для приближения и отдаления.',
+              const Text('Потяни мышью или пальцем, чтобы осмотреться. Кнопки ниже перемещают камеру по блочному миру.',
                 style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.35)),
               const SizedBox(height: 8),
-              Row(children: [
-                const Icon(Icons.rotate_left, size: 17, color: Colors.white60),
-                Expanded(child: Slider(
-                  value: yaw % (math.pi * 2),
-                  min: 0,
-                  max: math.pi * 2,
-                  onChanged: (v) => setState(() => yaw = v),
-                )),
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                IconButton(
+                  tooltip: 'Влево',
+                  onPressed: () => moveCamera(0, -0.6),
+                  icon: const Icon(Icons.chevron_left, color: purple, size: 30),
+                ),
+                IconButton(
+                  tooltip: 'Вперёд',
+                  onPressed: () => moveCamera(0.6, 0),
+                  icon: const Icon(Icons.keyboard_arrow_up, color: purple, size: 30),
+                ),
+                IconButton(
+                  tooltip: 'Назад',
+                  onPressed: () => moveCamera(-0.6, 0),
+                  icon: const Icon(Icons.keyboard_arrow_down, color: purple, size: 30),
+                ),
+                IconButton(
+                  tooltip: 'Вправо',
+                  onPressed: () => moveCamera(0, 0.6),
+                  icon: const Icon(Icons.chevron_right, color: purple, size: 30),
+                ),
                 IconButton(onPressed: resetView, icon: const Icon(Icons.center_focus_strong, color: purple)),
-              ]),
+              ]),              ]),
             ]),
           ),
         ),
@@ -853,10 +753,12 @@ class _Demo3DScreenState extends State<Demo3DScreen> {
 }
 
 class _VoxelDemoPainter extends CustomPainter {
-  _VoxelDemoPainter({required this.yaw, required this.pitch, required this.zoom});
+  _VoxelDemoPainter({required this.yaw, required this.pitch, required this.zoom, required this.cameraX, required this.cameraZ});
   final double yaw;
   final double pitch;
   final double zoom;
+  final double cameraX;
+  final double cameraZ;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -919,6 +821,7 @@ class _VoxelDemoPainter extends CustomPainter {
       ];
       final points = points3.map((p) => _project(p[0], p[1], p[2], center, focal)).toList();
       final depth = points.fold<double>(0, (sum, p) => sum + p.depth) / points.length;
+      if (depth <= 0.2) continue; // Do not draw blocks behind the first-person camera.
       projected.add(_ProjectedVoxel(points, block.color, depth));
     }
     projected.sort((a, b) => b.depth.compareTo(a.depth));
@@ -962,7 +865,7 @@ class _VoxelDemoPainter extends CustomPainter {
     }
 
     final title = TextPainter(
-      text: const TextSpan(text: 'MASTERME4A • 3D WORLD', style: TextStyle(
+      text: const TextSpan(text: 'MASTERME4A • MINECRAFT POV DEMO', style: TextStyle(
         color: Colors.white70, fontSize: 11, letterSpacing: 1.2, fontWeight: FontWeight.bold,
       )),
       textDirection: TextDirection.ltr,
@@ -971,22 +874,26 @@ class _VoxelDemoPainter extends CustomPainter {
   }
 
   _ProjectedPoint _project(double x, double y, double z, Offset center, double focal) {
-    final dx = x - 0.5;
-    final dz = z - 0.5;
-    final rx = dx * math.cos(yaw) - dz * math.sin(yaw);
-    final rz = dx * math.sin(yaw) + dz * math.cos(yaw);
-    final ry = y - 0.5;
-    final cy = math.cos(pitch);
-    final sy = math.sin(pitch);
-    final vy = ry * cy - rz * sy;
-    final vz = ry * sy + rz * cy + 19;
-    final perspective = focal / vz;
-    return _ProjectedPoint(Offset(center.dx + rx * perspective, center.dy - vy * perspective), vz);
+    // First-person camera: at eye height, looking toward -Z when yaw is zero.
+    final dx = x - cameraX;
+    final dy = y - 1.62;
+    final dz = z - cameraZ;
+    final cy = math.cos(yaw);
+    final sy = math.sin(yaw);
+    final cameraSide = dx * cy + dz * sy;
+    final depth = -dx * sy - dz * cy;
+    final cp = math.cos(pitch);
+    final sp = math.sin(pitch);
+    final cameraHeight = dy * cp + depth * sp;
+    final safeDepth = math.max(depth, 0.08);
+    final perspective = focal / safeDepth;
+    return _ProjectedPoint(Offset(center.dx + cameraSide * perspective, center.dy - cameraHeight * perspective), depth);
   }
 
   @override
   bool shouldRepaint(covariant _VoxelDemoPainter oldDelegate) =>
-      oldDelegate.yaw != yaw || oldDelegate.pitch != pitch || oldDelegate.zoom != zoom;
+      oldDelegate.yaw != yaw || oldDelegate.pitch != pitch || oldDelegate.zoom != zoom ||
+      oldDelegate.cameraX != cameraX || oldDelegate.cameraZ != cameraZ;
 }
 
 class _VoxelBlock {

@@ -104,6 +104,37 @@ def install_faithful_textures():
     return manifest
 
 
+def resolve_model_texture(model_name, visited=None):
+    """Resolve a block model's representative face texture, following parents."""
+    visited = set() if visited is None else visited
+    model_name = model_name.removeprefix("minecraft:")
+    if model_name in visited:
+        return None
+    visited.add(model_name)
+    path = MODELS_ROOT / (model_name + ".json")
+    if not path.exists():
+        return None
+    model = json.loads(path.read_text(encoding="utf-8"))
+    textures = model.get("textures", {})
+    # Prefer the visually representative full-block face.
+    for key in ("all", "side", "top", "end", "front", "particle"):
+        value = textures.get(key)
+        if isinstance(value, str):
+            if value.startswith("#"):
+                resolved = textures.get(value[1:])
+                if isinstance(resolved, str) and not resolved.startswith("#"):
+                    return resolved.removeprefix("minecraft:")
+            else:
+                return value.removeprefix("minecraft:")
+    for value in textures.values():
+        if isinstance(value, str) and not value.startswith("#"):
+            return value.removeprefix("minecraft:")
+    parent = model.get("parent")
+    if isinstance(parent, str):
+        return resolve_model_texture(parent, visited)
+    return None
+
+
 def main():
     for folder in (TEXTURE_ROOT, BLOCKSTATES_ROOT, MODELS_ROOT):
         folder.mkdir(parents=True, exist_ok=True)
@@ -222,6 +253,35 @@ def main():
         }
         for state_id in range(int(first), int(last) + 1):
             state_lookup[str(state_id)] = name
+
+    # Resolve each protocol block-state ID to a real PNG texture path.
+    state_texture_lookup = {}
+    for state_id, block_name in state_lookup.items():
+        block_info = block_ranges.get(block_name, {})
+        candidates = block_info.get("models", [])
+        texture_name = None
+        for model_name in candidates:
+            texture_name = resolve_model_texture(model_name)
+            if texture_name:
+                break
+        if texture_name:
+            texture_path = "textures/block/" + texture_name + ".png"
+            if (TEXTURE_ROOT / (texture_name + ".png")).exists():
+                state_texture_lookup[state_id] = texture_path
+
+    if len(state_texture_lookup) < 500:
+        raise SystemExit(
+            "State-to-texture lookup looks incomplete; refusing to publish "
+            f"({len(state_texture_lookup)} mapped states)"
+        )
+    (ROOT / "state_texture_lookup.json").write_text(
+        json.dumps({
+            "minecraftVersion": VERSION,
+            "source": "Minecraft 1.21.4 blockstates and block models",
+            "states": state_texture_lookup,
+        }, separators=(",", ":")),
+        encoding="utf-8",
+    )
 
     if len(state_lookup) < 1000:
         raise SystemExit(

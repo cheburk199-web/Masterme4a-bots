@@ -1007,8 +1007,8 @@ class InventorySlotTile extends StatelessWidget {
 }
 
 /// Live first-person voxel raycaster. It renders the actual sparse 3D block-state
-/// data received for this bot; colors are provisional until the 1.21.4 texture atlas
-/// and block-model registry are bundled with the app.
+/// data received for this bot. The current pass uses a higher-resolution color preview;
+/// vanilla PNG textures and block-model face mapping are a separate renderer step.
 class _LiveFirstPersonPainter extends CustomPainter {
   _LiveFirstPersonPainter({required this.chunks, required this.playerX, required this.playerY,
     required this.playerZ, required this.yaw, required this.pitch});
@@ -1066,7 +1066,10 @@ class _LiveFirstPersonPainter extends CustomPainter {
       }
     }
 
-    const rw = 120, rh = 68;
+    // Render at a substantially denser internal resolution. The old 120x68
+    // buffer made every voxel look like a large square on modern phone screens.
+    // 240x135 keeps the 16:9 ray grid crisp without an excessive mobile CPU cost.
+    const rw = 240, rh = 135;
     final pixelW = size.width / rw, pixelH = size.height / rh;
     final yawR = yaw * math.pi / 180, pitchR = pitch * math.pi / 180;
     final syaw = math.sin(yawR), cyaw = math.cos(yawR);

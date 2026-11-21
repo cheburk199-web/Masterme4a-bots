@@ -114,18 +114,20 @@ def load_model_json(model_name):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def resolve_model_texture(model_name, visited=None):
-    """Resolve a block model's representative face texture, following parents."""
-    visited = set() if visited is None else visited
-    model_name = model_name.removeprefix("minecraft:").removeprefix("block/")
+def _normalize_model_name(model_name):
+    return model_name.removeprefix("minecraft:").removeprefix("block/")
+
+
+@lru_cache(maxsize=None)
+def _resolve_model_texture_cached(model_name, visited=()):
+    """Cached recursive model texture lookup; each model/path is resolved once."""
+    model_name = _normalize_model_name(model_name)
     if model_name in visited:
         return None
-    visited.add(model_name)
     model = load_model_json(model_name)
     if model is None:
         return None
     textures = model.get("textures", {})
-    # Prefer the visually representative full-block face.
     for key in ("all", "side", "top", "end", "front", "particle"):
         value = textures.get(key)
         if isinstance(value, str):
@@ -140,18 +142,21 @@ def resolve_model_texture(model_name, visited=None):
             return value.removeprefix("minecraft:")
     parent = model.get("parent")
     if isinstance(parent, str):
-        return resolve_model_texture(parent, visited)
+        return _resolve_model_texture_cached(parent, visited + (model_name,))
     return None
 
 
+def resolve_model_texture(model_name, visited=None):
+    # Keep the original call signature for compatibility with the build loop.
+    return _resolve_model_texture_cached(model_name, tuple(visited or ()))
 
-def resolve_model_face_textures(model_name, visited=None):
-    """Resolve per-face PNGs, including inherited parent model textures."""
-    visited = set() if visited is None else visited
-    model_name = model_name.removeprefix("minecraft:").removeprefix("block/")
+
+@lru_cache(maxsize=None)
+def _resolve_model_face_textures_cached(model_name, visited=()):
+    """Cached per-face texture lookup, including inherited parent model faces."""
+    model_name = _normalize_model_name(model_name)
     if model_name in visited:
         return {}
-    visited.add(model_name)
     model = load_model_json(model_name)
     if model is None:
         return {}
@@ -172,11 +177,12 @@ def resolve_model_face_textures(model_name, visited=None):
                 result[face] = value
     parent = model.get("parent")
     if isinstance(parent, str):
-        inherited = resolve_model_face_textures(parent, visited)
+        inherited = _resolve_model_face_textures_cached(
+            parent, visited + (model_name,)
+        )
         inherited.update(result)
         result = inherited
     if not result:
-        # Cube-all and similar parents store their texture on the parent itself.
         for key in ("all", "side", "top", "end", "particle"):
             value = textures.get(key)
             if isinstance(value, str):
@@ -187,6 +193,12 @@ def resolve_model_face_textures(model_name, visited=None):
                     result = {face: value for face in ("up", "down", "north", "south", "east", "west")}
                     break
     return result
+
+
+def resolve_model_face_textures(model_name, visited=None):
+    # Return a fresh dict because callers may merge or filter the result.
+    return dict(_resolve_model_face_textures_cached(model_name, tuple(visited or ())))
+
 
 def main():
     for folder in (TEXTURE_ROOT, BLOCKSTATES_ROOT, MODELS_ROOT):

@@ -265,6 +265,7 @@ def main():
             if texture_name:
                 break
         if texture_name:
+            texture_name = texture_name.removeprefix("block/")
             texture_path = "textures/block/" + texture_name + ".png"
             if (TEXTURE_ROOT / (texture_name + ".png")).exists():
                 state_texture_lookup[state_id] = texture_path

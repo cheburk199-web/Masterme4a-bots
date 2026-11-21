@@ -33,16 +33,15 @@ jobs:
           if not p.exists():
               p = Path("android/settings.gradle")
           s = p.read_text()
-          repos = """    repositories {
+          pattern = r"repositories\\s*\\{[^}]*\\}"
+          replacement = """repositories {
                   google()
                   mavenCentral()
                   gradlePluginPortal()
               }"""
-          pattern = r"pluginManagement\s*\{\s*repositories\s*\{[^}]*\}\s*\}"
-          replacement = "pluginManagement {\n" + repos + "\n}"
           s, count = re.subn(pattern, lambda _: replacement, s, count=1, flags=re.S)
           if count == 0:
-              s = replacement + "\n" + s
+              raise SystemExit("Could not find existing repositories block in pluginManagement")
           p.write_text(s)
           print("Gradle plugin repositories configured")
           PY

@@ -316,6 +316,13 @@ class _DashboardState extends State<Dashboard> {
             ),
           )),
         ),
+        IconButton(
+          tooltip: '3D демонстрация',
+          icon: const Icon(Icons.view_in_ar, color: purple),
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => const Demo3DScreen(),
+          )),
+        ),
       ],
     ),
     body: SafeArea(child: Center(child: ConstrainedBox(
@@ -732,3 +739,271 @@ class _WorldRadarPainter extends CustomPainter {
   bool shouldRepaint(covariant _WorldRadarPainter oldDelegate) => oldDelegate.yaw != yaw || oldDelegate.zoom != zoom;
 }
 
+
+/// Lightweight Minecraft-inspired 3D voxel demo rendered in Flutter.
+/// It is a visual demo scene, not a live 3D game client/world stream.
+class Demo3DScreen extends StatefulWidget {
+  const Demo3DScreen({super.key});
+  @override
+  State<Demo3DScreen> createState() => _Demo3DScreenState();
+}
+
+class _Demo3DScreenState extends State<Demo3DScreen> {
+  double yaw = -0.65;
+  double pitch = 0.42;
+  double zoom = 1.0;
+  Offset? dragOrigin;
+  double startYaw = 0;
+  double startPitch = 0;
+  double startZoom = 1;
+
+  void resetView() => setState(() {
+    yaw = -0.65;
+    pitch = 0.42;
+    zoom = 1;
+  });
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      backgroundColor: deepPurple,
+      title: const Text('3D ДЕМОНСТРАЦИЯ', style: TextStyle(fontWeight: FontWeight.w800)),
+      actions: [
+        IconButton(
+          tooltip: 'Сбросить вид',
+          onPressed: resetView,
+          icon: const Icon(Icons.restart_alt, color: purple),
+        ),
+      ],
+    ),
+    body: SafeArea(child: Column(children: [
+      Expanded(child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: DecoratedBox(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFF28154A), Color(0xFF10091B)],
+              ),
+            ),
+            child: LayoutBuilder(builder: (context, constraints) {
+              return GestureDetector(
+                onScaleStart: (details) {
+                  dragOrigin = details.focalPoint;
+                  startYaw = yaw;
+                  startPitch = pitch;
+                  startZoom = zoom;
+                },
+                onScaleUpdate: (details) {
+                  setState(() {
+                    yaw = startYaw + (details.focalPoint.dx - (dragOrigin?.dx ?? details.focalPoint.dx)) * 0.009;
+                    pitch = (startPitch - (details.focalPoint.dy - (dragOrigin?.dy ?? details.focalPoint.dy)) * 0.006)
+                        .clamp(-0.12, 1.05).toDouble();
+                    zoom = (startZoom * details.scale).clamp(0.55, 2.4).toDouble();
+                  });
+                },
+                onScaleEnd: (_) => dragOrigin = null,
+                child: CustomPaint(
+                  size: Size(constraints.maxWidth, constraints.maxHeight),
+                  painter: _VoxelDemoPainter(yaw: yaw, pitch: pitch, zoom: zoom),
+                  child: const SizedBox.expand(),
+                ),
+              );
+            }),
+          ),
+        ),
+      )),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Card(
+          color: panel,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Row(children: [
+                Icon(Icons.view_in_ar, color: purple),
+                SizedBox(width: 8),
+                Text('ВОКСЕЛЬНЫЙ МИР', style: TextStyle(fontWeight: FontWeight.bold)),
+                Spacer(),
+                Text('3D • DEMO', style: TextStyle(color: purple, fontSize: 11, fontWeight: FontWeight.bold)),
+              ]),
+              const SizedBox(height: 8),
+              const Text('Перетаскивай пальцем или мышью, чтобы вращать сцену. Используй два пальца для приближения и отдаления.',
+                style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.35)),
+              const SizedBox(height: 8),
+              Row(children: [
+                const Icon(Icons.rotate_left, size: 17, color: Colors.white60),
+                Expanded(child: Slider(
+                  value: yaw % (math.pi * 2),
+                  min: 0,
+                  max: math.pi * 2,
+                  onChanged: (v) => setState(() => yaw = v),
+                )),
+                IconButton(onPressed: resetView, icon: const Icon(Icons.center_focus_strong, color: purple)),
+              ]),
+            ]),
+          ),
+        ),
+      ),
+    ])),
+  );
+}
+
+class _VoxelDemoPainter extends CustomPainter {
+  _VoxelDemoPainter({required this.yaw, required this.pitch, required this.zoom});
+  final double yaw;
+  final double pitch;
+  final double zoom;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final sky = Paint()..shader = const LinearGradient(
+      begin: Alignment.topCenter, end: Alignment.bottomCenter,
+      colors: [Color(0xFF33205C), Color(0xFF130B21)],
+    ).createShader(Offset.zero & size);
+    canvas.drawRect(Offset.zero & size, sky);
+
+    // Floating stars and distant horizon give the scene depth.
+    final starPaint = Paint()..color = const Color(0xFFBDA3FF).withOpacity(.65);
+    for (var i = 0; i < 42; i++) {
+      final x = ((i * 73 + 19) % 997) / 997 * size.width;
+      final y = ((i * 47 + 13) % 431) / 431 * size.height * .52;
+      canvas.drawCircle(Offset(x, y), i % 5 == 0 ? 1.8 : 1, starPaint);
+    }
+
+    final center = Offset(size.width * .5, size.height * .57);
+    final focal = size.shortestSide * 1.25 * zoom;
+    final blocks = <_VoxelBlock>[];
+    // Layered grass/dirt island, arranged like a compact Minecraft demo map.
+    for (var x = -6; x <= 6; x++) {
+      for (var z = -6; z <= 6; z++) {
+        final edge = math.max(x.abs(), z.abs());
+        if (edge == 6 && ((x * 3 + z * 5).abs() % 4 == 0)) continue;
+        final height = ((x * 7 + z * 11 + x * z).abs() % 3);
+        for (var y = -2; y <= height; y++) {
+          final top = y == height;
+          final color = top ? const Color(0xFF5DBB65) :
+              (y == -2 ? const Color(0xFF6B4A35) : const Color(0xFF8A6043));
+          blocks.add(_VoxelBlock(x.toDouble(), y.toDouble(), z.toDouble(), color));
+        }
+      }
+    }
+    // A small stylized tree and colorful demo blocks.
+    for (var y = 0; y < 3; y++) {
+      blocks.add(_VoxelBlock(-2, y.toDouble() + 1, 1, const Color(0xFF795238)));
+    }
+    for (var x = -4; x <= 0; x++) {
+      for (var z = -1; z <= 3; z++) {
+        for (var y = 3; y <= 5; y++) {
+          if ((x + z + y).abs() % 4 != 0) {
+            blocks.add(_VoxelBlock(x.toDouble(), y.toDouble(), z.toDouble(), const Color(0xFF329B55)));
+          }
+        }
+      }
+    }
+    blocks.add(_VoxelBlock(3, 1, -2, const Color(0xFF9B5CFF)));
+    blocks.add(_VoxelBlock(3, 2, -2, const Color(0xFFB98AFF)));
+    blocks.add(_VoxelBlock(4, 1, -2, const Color(0xFF4EA5FF)));
+    blocks.add(_VoxelBlock(4, 2, -2, const Color(0xFF83C6FF)));
+
+    final projected = <_ProjectedVoxel>[];
+    for (final block in blocks) {
+      final points3 = <List<double>>[
+        [block.x, block.y, block.z], [block.x + 1, block.y, block.z],
+        [block.x + 1, block.y + 1, block.z], [block.x, block.y + 1, block.z],
+        [block.x, block.y, block.z + 1], [block.x + 1, block.y, block.z + 1],
+        [block.x + 1, block.y + 1, block.z + 1], [block.x, block.y + 1, block.z + 1],
+      ];
+      final points = points3.map((p) => _project(p[0], p[1], p[2], center, focal)).toList();
+      final depth = points.fold<double>(0, (sum, p) => sum + p.depth) / points.length;
+      projected.add(_ProjectedVoxel(points, block.color, depth));
+    }
+    projected.sort((a, b) => b.depth.compareTo(a.depth));
+
+    final faces = <List<int>>[
+      [0, 1, 2, 3], // front
+      [1, 5, 6, 2], // right
+      [4, 5, 6, 7], // back
+      [0, 4, 7, 3], // left
+      [3, 2, 6, 7], // top
+      [0, 1, 5, 4], // bottom
+    ];
+    for (final voxel in projected) {
+      for (var faceIndex = 0; faceIndex < faces.length; faceIndex++) {
+        final face = faces[faceIndex];
+        // Hide faces pointing away from the camera to keep the scene clean.
+        final visible = faceIndex == 4 ||
+            (faceIndex == 0 && math.sin(yaw) < .15) ||
+            (faceIndex == 1 && math.cos(yaw) > -.15) ||
+            (faceIndex == 2 && math.sin(yaw) > -.15) ||
+            (faceIndex == 3 && math.cos(yaw) < .15);
+        if (!visible) continue;
+        final path = Path()..moveTo(voxel.points[face[0]].screen.dx, voxel.points[face[0]].screen.dy);
+        for (var j = 1; j < face.length; j++) {
+          path.lineTo(voxel.points[face[j]].screen.dx, voxel.points[face[j]].screen.dy);
+        }
+        path.close();
+        final shade = faceIndex == 4 ? 1.12 : (faceIndex == 1 || faceIndex == 0 ? .82 : .65);
+        final color = Color.fromARGB(
+          voxel.color.alpha,
+          (voxel.color.red * shade).round().clamp(0, 255),
+          (voxel.color.green * shade).round().clamp(0, 255),
+          (voxel.color.blue * shade).round().clamp(0, 255),
+        );
+        canvas.drawPath(path, Paint()..color = color);
+        canvas.drawPath(path, Paint()
+          ..color = const Color(0xFF21152D).withOpacity(.32)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = .7);
+      }
+    }
+
+    final title = TextPainter(
+      text: const TextSpan(text: 'MASTERME4A • 3D WORLD', style: TextStyle(
+        color: Colors.white70, fontSize: 11, letterSpacing: 1.2, fontWeight: FontWeight.bold,
+      )),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    title.paint(canvas, const Offset(14, 14));
+  }
+
+  _ProjectedPoint _project(double x, double y, double z, Offset center, double focal) {
+    final dx = x - 0.5;
+    final dz = z - 0.5;
+    final rx = dx * math.cos(yaw) - dz * math.sin(yaw);
+    final rz = dx * math.sin(yaw) + dz * math.cos(yaw);
+    final ry = y - 0.5;
+    final cy = math.cos(pitch);
+    final sy = math.sin(pitch);
+    final vy = ry * cy - rz * sy;
+    final vz = ry * sy + rz * cy + 19;
+    final perspective = focal / vz;
+    return _ProjectedPoint(Offset(center.dx + rx * perspective, center.dy - vy * perspective), vz);
+  }
+
+  @override
+  bool shouldRepaint(covariant _VoxelDemoPainter oldDelegate) =>
+      oldDelegate.yaw != yaw || oldDelegate.pitch != pitch || oldDelegate.zoom != zoom;
+}
+
+class _VoxelBlock {
+  const _VoxelBlock(this.x, this.y, this.z, this.color);
+  final double x, y, z;
+  final Color color;
+}
+
+class _ProjectedPoint {
+  const _ProjectedPoint(this.screen, this.depth);
+  final Offset screen;
+  final double depth;
+}
+
+class _ProjectedVoxel {
+  const _ProjectedVoxel(this.points, this.color, this.depth);
+  final List<_ProjectedPoint> points;
+  final Color color;
+  final double depth;
+}

@@ -40,11 +40,12 @@ if settings.exists():
     if open_collab not in settings_text:
         marker = "repositories {"
         if marker in settings_text:
-            settings_text = settings_text.replace(marker, marker + '\\n        ' + open_collab, 1)
+            settings_text = settings_text.replace(marker, marker + '\n        ' + open_collab, 1)
         else:
-            settings_text += '\\ndependencyResolutionManagement {\\n    repositories {\\n        ' + open_collab + '\\n    }\\n}\\n'
+            settings_text += '\ndependencyResolutionManagement {\n    repositories {\n        ' + open_collab + '\n    }\n}\n'
         settings.write_text(settings_text)
-\napp_text = app.read_text()
+
+app_text = app.read_text()
 dependency = "com.github.GeyserMC:MCProtocolLib:1.21.4-1"
 if dependency not in app_text:
     if app.name.endswith(".kts"):

@@ -615,51 +615,127 @@ class _WorldScreenState extends State<WorldScreen> {
 }
 
 
-class LiveWorldScreen extends StatelessWidget {
+class LiveWorldScreen extends StatefulWidget {
   const LiveWorldScreen({super.key, required this.botId});
   final int botId;
+  @override
+  State<LiveWorldScreen> createState() => _LiveWorldScreenState();
+}
+
+class _LiveWorldScreenState extends State<LiveWorldScreen> {
+  static const MethodChannel _channel = MethodChannel('masterme4a/bot_control');
+  Timer? _holdTimer;
+  double _startX = 0, _startY = 0, _baseYaw = 0, _basePitch = 0;
+  bool _looking = false;
+  String _message = 'Подключи бота и дождись позиции';
+
+  Future<void> _step(double forward, double strafe, {bool jump = false, bool shift = false, bool sprint = false}) async {
+    try {
+      await _channel.invokeMethod<bool>('moveBot', {
+        'botId': widget.botId, 'forward': forward, 'strafe': strafe,
+        'jump': jump, 'shift': shift, 'sprint': sprint,
+      });
+      if (mounted) setState(() => _message = 'Команда движения отправлена');
+    } on PlatformException catch (e) {
+      if (mounted) setState(() => _message = e.message ?? 'Ошибка движения');
+    }
+  }
+
+  void _hold(double forward, double strafe, {bool sprint = false, bool shift = false}) {
+    _holdTimer?.cancel();
+    _step(forward, strafe, sprint: sprint, shift: shift);
+    _holdTimer = Timer.periodic(const Duration(milliseconds: 180), (_) => _step(forward, strafe, sprint: sprint, shift: shift));
+  }
+
+  void _release() {
+    _holdTimer?.cancel();
+    _holdTimer = null;
+    _step(0, 0);
+  }
+
+  @override
+  void dispose() {
+    _holdTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(backgroundColor: deepPurple, title: const Text('LIVE WORLD • ЭТАП 1')),
-    body: ValueListenableBuilder<Map<String, dynamic>>(
-      valueListenable: botWorldNotifiers[botId],
+    appBar: AppBar(
+      backgroundColor: deepPurple,
+      title: const Text('BOT GAME VIEW • CONTROL'),
+      actions: [IconButton(tooltip: 'Прыжок', onPressed: () => _step(0, 0, jump: true), icon: const Icon(Icons.arrow_upward, color: purple))],
+    ),
+    body: SafeArea(child: ValueListenableBuilder<Map<String, dynamic>>(
+      valueListenable: botWorldNotifiers[widget.botId],
       builder: (context, w, _) {
-        String val(String key) {
-          final v = w[key];
-          return v is num ? v.toStringAsFixed(2) : '—';
-        }
-        Widget item(String label, String value) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 7),
-          child: Row(children: [Expanded(child: Text(label, style: const TextStyle(color: Colors.white60))), Text(value, style: const TextStyle(fontWeight: FontWeight.bold))]),
-        );
-        return ListView(padding: const EdgeInsets.all(16), children: [
-          Card(color: panel, child: ListTile(
-            leading: Icon(w['joined'] == true ? Icons.sensors : Icons.wifi_off, color: purple),
-            title: Text(w['joined'] == true ? 'Бот в игровом мире' : 'Бот не вошёл'),
-            subtitle: const Text('Данные приходят из пакетов Minecraft-сервера'),
+        final connected = w['joined'] == true && w['hasPosition'] == true;
+        final x = (w['x'] as num? ?? 0).toDouble();
+        final y = (w['y'] as num? ?? 0).toDouble();
+        final z = (w['z'] as num? ?? 0).toDouble();
+        return Column(children: [
+          Expanded(child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onPanStart: (e) {
+              _looking = true;
+              _startX = e.localPosition.dx; _startY = e.localPosition.dy;
+              _baseYaw = (w['yaw'] as num? ?? 0).toDouble();
+              _basePitch = (w['pitch'] as num? ?? 0).toDouble();
+            },
+            onPanUpdate: (e) {
+              if (!_looking) return;
+              final yaw = _baseYaw + (e.localPosition.dx - _startX) * 0.35;
+              final pitch = (_basePitch - (e.localPosition.dy - _startY) * 0.25).clamp(-90.0, 90.0);
+              _channel.invokeMethod<bool>('lookBot', {'botId': widget.botId, 'yaw': yaw, 'pitch': pitch}).catchError((_) {});
+            },
+            onPanEnd: (_) => _looking = false,
+            child: Container(
+              width: double.infinity, margin: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: const Color(0xFF15111E), borderRadius: BorderRadius.circular(18), border: Border.all(color: purple.withOpacity(.55))),
+              child: Stack(children: [
+                Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(connected ? Icons.visibility : Icons.visibility_off, color: purple, size: 40),
+                  const SizedBox(height: 10),
+                  Text(connected ? 'БОТ В МИРЕ' : 'НЕТ ПОДКЛЮЧЕНИЯ', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Text('X ${x.toStringAsFixed(1)}  Y ${y.toStringAsFixed(1)}  Z ${z.toStringAsFixed(1)}', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                  const SizedBox(height: 12),
+                  const Text('Свайп — поворот взгляда бота', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                ])),
+                const Center(child: IgnorePointer(child: Text('+', style: TextStyle(color: Colors.white70, fontSize: 24)))),
+                Positioned(left: 12, top: 12, child: Text('CHUNKS: ${w['loadedChunks'] ?? 0}', style: const TextStyle(color: purple, fontSize: 11))),
+                Positioned(right: 12, top: 12, child: Text('LIVE', style: TextStyle(color: connected ? Colors.greenAccent : Colors.redAccent, fontWeight: FontWeight.bold))),
+              ]),
+            ),
           )),
-          Card(color: panel, child: Padding(padding: const EdgeInsets.all(16), child: Column(children: [
-            const Text('ПОЗИЦИЯ И ПОВОРОТ КАМЕРЫ', style: TextStyle(color: purple, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            item('X', val('x')), item('Y', val('y')), item('Z', val('z')),
-            item('Yaw', val('yaw')), item('Pitch', val('pitch')),
-          ]))),
-          Card(color: panel, child: Padding(padding: const EdgeInsets.all(16), child: Column(children: [
-            const Text('ДАННЫЕ МИРА', style: TextStyle(color: purple, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            item('Загруженные чанки', (w['loadedChunks'] ?? 0).toString()),
-            item('Получено данных чанков', '${((w['chunkDataBytes'] as num? ?? 0) / 1024).toStringAsFixed(1)} KB'),
-            item('Обновления блоков', (w['blockUpdates'] ?? 0).toString()),
-            item('Последний чанк', '${w['lastChunkX'] ?? 0}, ${w['lastChunkZ'] ?? 0}'),
-          ]))),
-          const Card(color: panel, child: Padding(padding: EdgeInsets.all(16), child: Text(
-            'Это реальные координаты и чанковые пакеты от сервера. Сейчас экран — телеметрия; декодирование палитр блоков и полноценная 3D-отрисовка ещё впереди. Я не выдаю декоративную карту за настоящий мир.',
-            style: TextStyle(color: Colors.white70, height: 1.4),
-          ))),
+          Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 12), child: Column(children: [
+            Text(_message, style: const TextStyle(color: Colors.white54, fontSize: 11)),
+            const SizedBox(height: 8),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+              _button(Icons.keyboard_arrow_up, 'Вперёд', 1, 0),
+              _button(Icons.keyboard_arrow_down, 'Назад', -1, 0),
+              _button(Icons.chevron_left, 'Влево', 0, -1),
+              _button(Icons.chevron_right, 'Вправо', 0, 1),
+              IconButton(tooltip: 'Прыжок', onPressed: () => _step(0, 0, jump: true), icon: const Icon(Icons.arrow_upward, color: purple, size: 28)),
+            ]),
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              OutlinedButton.icon(onPressed: () => _step(0, 0, shift: true), icon: const Icon(Icons.keyboard_arrow_down), label: const Text('Присесть')),
+              const SizedBox(width: 10),
+              OutlinedButton.icon(onPressed: () => _step(1, 0, sprint: true), icon: const Icon(Icons.directions_run), label: const Text('Бег')),
+            ]),
+            const Text('Пакеты движения отправляются серверу. 3D-блоки ещё не отображаются.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white38, fontSize: 10)),
+          ])),
         ]);
       },
-    ),
+    )),
+  );
+
+  Widget _button(IconData icon, String label, double forward, double strafe) => GestureDetector(
+    onTap: () => _step(forward, strafe),
+    onLongPressStart: (_) => _hold(forward, strafe),
+    onLongPressEnd: (_) => _release(),
+    child: Container(width: 52, height: 58, decoration: BoxDecoration(color: panel, borderRadius: BorderRadius.circular(12), border: Border.all(color: purple.withOpacity(.4))),
+      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(icon, color: purple, size: 28), Text(label, style: const TextStyle(fontSize: 9, color: Colors.white70))])),
   );
 }
 

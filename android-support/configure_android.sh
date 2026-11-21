@@ -61,9 +61,9 @@ app_text = app.read_text()
 dependency = "com.github.GeyserMC:MCProtocolLib:1.21.4-1"
 if dependency not in app_text:
     if app.name.endswith(".kts"):
-        app_text += '\ndependencies {\n    implementation("com.github.GeyserMC:MCProtocolLib:1.21.4-1")\n}\n'
+        app_text += '\ndependencies {\n    implementation("com.github.GeyserMC:MCProtocolLib:1.21.4-1") {\n        exclude(group = "org.cloudburstmc.math", module = "api")\n    }\n}\n'
     else:
-        app_text += "\ndependencies {\n    implementation 'com.github.GeyserMC:MCProtocolLib:1.21.4-1'\n}\n"
+        app_text += "\ndependencies {\n    implementation('com.github.GeyserMC:MCProtocolLib:1.21.4-1') {\n        exclude group: 'org.cloudburstmc.math', module: 'api'\n    }\n}\n"
     app.write_text(app_text)
 
 manifest = Path("android/app/src/main/AndroidManifest.xml")

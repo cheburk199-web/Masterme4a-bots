@@ -38,6 +38,7 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.Clien
 import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PositionElement;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundOpenScreenPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundContainerSetContentPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundContainerSetSlotPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundChatCommandPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundMovePlayerPosRotPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.level.ServerboundPlayerInputPacket;
@@ -206,6 +207,10 @@ public class MainActivity extends FlutterActivity {
                             route.openContainerId = open.getContainerId();
                             emit(botId, "Открылось меню. Жду содержимое…", "menu");
                         } else if (packet instanceof ClientboundContainerSetContentPacket content) {
+                            // Player inventory is container 0. Emit server-authoritative slots for the UI.
+                            if (content.getContainerId() == 0 && content.getItems() != null) {
+                                emitInventory(botId, content.getItems());
+                            }
                             if (route.openContainerId != content.getContainerId() || route.lastClickedContainerId == content.getContainerId() || route.stage >= 2) return;
                             int visibleSlotNumber = route.stage == 0 ? 3 : 25;
                             int protocolSlotIndex = visibleSlotNumber - 1;
@@ -234,7 +239,10 @@ public class MainActivity extends FlutterActivity {
                             } else {
                                 emit(botId, "Нажал 25-й слот. Маршрут выбора отправлен.", "route-sent");
                             }
-                        }
+                        } else if (packet instanceof ClientboundContainerSetSlotPacket slotUpdate) {
+                            if (slotUpdate.getContainerId() == 0) {
+                                emitInventorySlot(botId, slotUpdate.getSlot(), slotUpdate.getItem());
+                            }
                     }
 
                     @Override
@@ -280,6 +288,48 @@ public class MainActivity extends FlutterActivity {
         }, "masterme4a-watchdog-" + botId);
         watchdog.setDaemon(true);
         watchdog.start();
+    }
+
+    private void emitInventory(int botId, ItemStack[] items) {
+        java.util.ArrayList<java.util.Map<String, Object>> slots = new java.util.ArrayList<>();
+        for (int slot = 0; slot < items.length; slot++) {
+            slots.add(itemPayload(slot, items[slot]));
+        }
+        emitInventoryPayload(botId, slots);
+    }
+
+    private void emitInventorySlot(int botId, int slot, ItemStack item) {
+        if (slot < 0 || slot > 45) return;
+        java.util.ArrayList<java.util.Map<String, Object>> slots = new java.util.ArrayList<>();
+        // Send the slot update as a compact patch; Dart merges it into the last snapshot.
+        slots.add(itemPayload(slot, item));
+        mainHandler.post(() -> {
+            if (channel == null) return;
+            java.util.HashMap<String, Object> payload = new java.util.HashMap<>();
+            payload.put("botId", botId);
+            payload.put("patch", true);
+            payload.put("slots", slots);
+            channel.invokeMethod("botInventory", payload);
+        });
+    }
+
+    private java.util.Map<String, Object> itemPayload(int slot, ItemStack item) {
+        java.util.HashMap<String, Object> value = new java.util.HashMap<>();
+        value.put("slot", slot);
+        value.put("id", item == null ? -1 : item.getId());
+        value.put("count", item == null ? 0 : item.getAmount());
+        return value;
+    }
+
+    private void emitInventoryPayload(int botId, java.util.ArrayList<java.util.Map<String, Object>> slots) {
+        mainHandler.post(() -> {
+            if (channel == null) return;
+            java.util.HashMap<String, Object> payload = new java.util.HashMap<>();
+            payload.put("botId", botId);
+            payload.put("patch", false);
+            payload.put("slots", slots);
+            channel.invokeMethod("botInventory", payload);
+        });
     }
 
     // Decode the received chunk section palettes into a compact top-down block map.

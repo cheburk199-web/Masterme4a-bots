@@ -151,6 +151,8 @@ class _DashboardState extends State<Dashboard> {
   String? serverVersion;
   int? onlinePlayers;
   int? maxPlayers;
+  final List<String> gameModes = const ['СолоЛайт', 'ДуоЛайт', 'ТриоЛайт', 'КланЛайт'];
+  String selectedMode = 'ТриоЛайт';
   BotProfile get current => bots[active];
 
   @override
@@ -210,7 +212,7 @@ class _DashboardState extends State<Dashboard> {
       notice('Microsoft OAuth ещё не реализован. Не вводи пароль в приложение.');
       return;
     }
-    notice('Status Ping готов. Вход в игровой мир — следующий этап.');
+    notice('Выбран режим $selectedMode. Автоматический вход в лобби и режим ещё не подключён.');
   }
 
   @override
@@ -268,6 +270,23 @@ class _DashboardState extends State<Dashboard> {
             const SizedBox(height: 10),
             TextField(controller: port, keyboardType: TextInputType.number,
               decoration: const InputDecoration(labelText: 'Порт', border: OutlineInputBorder())),
+            const SizedBox(height: 14),
+            const Text('РЕЖИМ HOLYWORLD', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: selectedMode,
+              decoration: const InputDecoration(
+                labelText: 'Режим по умолчанию',
+                prefixIcon: Icon(Icons.sports_esports),
+                border: OutlineInputBorder(),
+              ),
+              items: gameModes.map((modeName) => DropdownMenuItem(
+                value: modeName, child: Text(modeName),
+              )).toList(),
+              onChanged: (value) {
+                if (value != null) setState(() => selectedMode = value);
+              },
+            ),
             const SizedBox(height: 12),
             SizedBox(width: double.infinity, child: OutlinedButton.icon(
               onPressed: checking ? null : checkServer,

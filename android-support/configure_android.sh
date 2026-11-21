@@ -70,7 +70,8 @@ print("Gradle dependency:")
 for line in app.read_text().splitlines():
     if "com.github.GeyserMC:MCProtocolLib" in line:
         print(line)
-print("Maven repository:")\nprint("OpenCollab repository configured in settings.gradle.kts:", Path("android/settings.gradle.kts").exists() and "repo.opencollab.dev/main" in Path("android/settings.gradle.kts").read_text())
+print("Maven repository:")
+print("OpenCollab repository configured in settings.gradle.kts:", Path("android/settings.gradle.kts").exists() and "repo.opencollab.dev/main" in Path("android/settings.gradle.kts").read_text())
 for line in root.read_text().splitlines():
     if "jitpack.io" in line:
         print(line)

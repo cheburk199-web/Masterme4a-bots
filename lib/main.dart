@@ -271,12 +271,12 @@ class _DashboardState extends State<Dashboard> {
     }
   }
 
-  Future<void> sendBotCommand() async {
-    final command = commandController.text.trim();
+  Future<void> sendBotCommand([String? rawCommand]) async {
+    final command = (rawCommand ?? commandController.text).trim();
     if (command.isEmpty) return;
     try {
       await _botChannel.invokeMethod<bool>('sendCommand', {'botId': active, 'command': command});
-      commandController.clear();
+      if (rawCommand == null) commandController.clear();
     } on PlatformException catch (error) {
       notice(error.message ?? 'Не удалось отправить команду');
     }
@@ -302,6 +302,20 @@ class _DashboardState extends State<Dashboard> {
         SizedBox(width: 7),
         Text('BOT CONTROL', style: TextStyle(color: purple, fontSize: 12)),
       ]),
+      actions: [
+        IconButton(
+          tooltip: 'Экран мира',
+          icon: const Icon(Icons.public, color: purple),
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => WorldScreen(
+              botName: current.nickname.text,
+              botStatus: botMessages[active],
+              events: botActivity[active],
+              onSend: (command) => sendBotCommand(command),
+            ),
+          )),
+        ),
+      ],
     ),
     body: SafeArea(child: Center(child: ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 900),
@@ -469,3 +483,207 @@ class _DashboardState extends State<Dashboard> {
     ))),
   );
 }
+
+// First version of the world screen. Live position/entity packets will populate
+// the radar in a follow-up protocol update; this page already shows bot events
+// and lets the user send commands without returning to the dashboard.
+class WorldScreen extends StatefulWidget {
+  const WorldScreen({
+    super.key,
+    required this.botName,
+    required this.botStatus,
+    required this.events,
+    required this.onSend,
+  });
+  final String botName;
+  final String botStatus;
+  final List<String> events;
+  final Future<void> Function(String) onSend;
+
+  @override
+  State<WorldScreen> createState() => _WorldScreenState();
+}
+
+class _WorldScreenState extends State<WorldScreen> {
+  final command = TextEditingController();
+  Timer? refreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // The bot event list is owned by the dashboard; refresh this page so
+    // incoming server chat/status events remain visible while it is open.
+    refreshTimer = Timer.periodic(const Duration(milliseconds: 700), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    refreshTimer?.cancel();
+    command.dispose();
+    super.dispose();
+  }
+
+  Future<void> submit() async {
+    final value = command.text.trim();
+    if (value.isEmpty) return;
+    await widget.onSend(value);
+    command.clear();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      backgroundColor: deepPurple,
+      title: const Text('ЭКРАН МИРА', style: TextStyle(fontWeight: FontWeight.w800)),
+    ),
+    body: SafeArea(child: ListView(
+      padding: const EdgeInsets.all(14),
+      children: [
+        Card(color: panel, child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(children: [
+            const Icon(Icons.circle, color: Colors.greenAccent, size: 12),
+            const SizedBox(width: 9),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(widget.botName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+              const SizedBox(height: 4),
+              Text(widget.botStatus, style: const TextStyle(color: Colors.white70)),
+            ])),
+          ]),
+        )),
+        const SizedBox(height: 12),
+        Card(color: panel, child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('РАДАР / ВИД СВЕРХУ', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+            const SizedBox(height: 10),
+            AspectRatio(
+              aspectRatio: 1.05,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: CustomPaint(
+                  painter: _WorldRadarPainter(),
+                  child: const Center(child: Text('BOT', style: TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12,
+                  ))),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text('Пока отображается маркер бота. Координаты и ближайшие сущности появятся после подключения игровых пакетов.',
+              style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.35)),
+          ]),
+        )),
+        const SizedBox(height: 12),
+        Card(color: panel, child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('КОМАНДА В МИРЕ', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            TextField(
+              controller: command,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => submit(),
+              decoration: InputDecoration(
+                hintText: '/lite, /hub, /home',
+                prefixIcon: const Icon(Icons.terminal),
+                suffixIcon: IconButton(icon: const Icon(Icons.send, color: purple), onPressed: submit),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+          ]),
+        )),
+        const SizedBox(height: 12),
+        Card(color: panel, child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('ЧАТ И СОБЫТИЯ', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Container(
+              height: 260,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: deepPurple, borderRadius: BorderRadius.circular(10)),
+              child: widget.events.isEmpty
+                ? const Text('Ожидаю сообщения сервера…', style: TextStyle(color: Colors.white60))
+                : ListView.builder(
+                    reverse: true,
+                    itemCount: widget.events.length,
+                    itemBuilder: (context, index) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text(widget.events[widget.events.length - 1 - index],
+                        style: const TextStyle(fontSize: 12, height: 1.25)),
+                    ),
+                  ),
+            ),
+          ]),
+        )),
+      ],
+    )),
+  );
+}
+
+class _WorldRadarPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final background = Paint()..color = const Color(0xFF10091B);
+    canvas.drawRect(Offset.zero & size, background);
+
+    final grid = Paint()
+      ..color = const Color(0xFF51376D)
+      ..strokeWidth = 1;
+    const cell = 28.0;
+    for (double x = 0; x <= size.width; x += cell) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
+    }
+    for (double y = 0; y <= size.height; y += cell) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+    }
+
+    final center = Offset(size.width / 2, size.height / 2);
+    final rings = Paint()
+      ..color = const Color(0xFF9B5CFF).withOpacity(.45)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    for (double radius = 35; radius < size.width * .48; radius += 35) {
+      canvas.drawCircle(center, radius, rings);
+    }
+    final cross = Paint()
+      ..color = const Color(0xFF9B5CFF)
+      ..strokeWidth = 1.5;
+    canvas.drawLine(Offset(center.dx, 0), Offset(center.dx, size.height), cross);
+    canvas.drawLine(Offset(0, center.dy), Offset(size.width, center.dy), cross);
+
+    final direction = Paint()..color = const Color(0xFF9B5CFF).withOpacity(.22);
+    final cone = Path()
+      ..moveTo(center.dx, center.dy)
+      ..lineTo(center.dx - 42, center.dy - 70)
+      ..lineTo(center.dx + 42, center.dy - 70)
+      ..close();
+    canvas.drawPath(cone, direction);
+
+    final marker = Paint()..color = const Color(0xFFB98AFF);
+    final bot = Path()
+      ..moveTo(center.dx, center.dy - 13)
+      ..lineTo(center.dx - 11, center.dy + 10)
+      ..lineTo(center.dx + 11, center.dy + 10)
+      ..close();
+    canvas.drawPath(bot, marker);
+    canvas.drawCircle(center, 15, Paint()
+      ..color = const Color(0xFFB98AFF)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2);
+    final label = TextPainter(
+      text: const TextSpan(text: 'N', style: TextStyle(
+        color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold,
+      )),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    label.paint(canvas, Offset(size.width - label.width - 8, 8));
+  }
+
+  @override
+  bool shouldRepaint(covariant _WorldRadarPainter oldDelegate) => false;
+}
+

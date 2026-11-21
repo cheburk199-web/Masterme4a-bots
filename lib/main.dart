@@ -16,6 +16,7 @@ const holyWorldTrioLiteSlot = 25;
 final List<ValueNotifier<Map<String, dynamic>>> botWorldNotifiers = List.generate(5, (_) =>
   ValueNotifier<Map<String, dynamic>>({'joined': false, 'hasPosition': false, 'x': 0.0, 'y': 0.0, 'z': 0.0, 'yaw': 0.0, 'pitch': 0.0, 'loadedChunks': 0, 'chunkDataBytes': 0, 'blockUpdates': 0, 'lastChunkX': 0, 'lastChunkZ': 0}));
 final List<ValueNotifier<Map<String, dynamic>>> botChunkNotifiers = List.generate(5, (_) => ValueNotifier<Map<String, dynamic>>({}));
+final List<ValueNotifier<Map<String, dynamic>>> botInventoryNotifiers = List.generate(5, (_) => ValueNotifier<Map<String, dynamic>>({'slots': <dynamic>[], 'received': false}));
 
 enum ConnectionMode { microsoft, nickname }
 
@@ -193,6 +194,29 @@ class _DashboardState extends State<Dashboard> {
           final chunks = Map<String, dynamic>.from(botChunkNotifiers[id].value);
           chunks[key] = data;
           botChunkNotifiers[id].value = chunks;
+        }
+      } else if (call.method == 'botInventory' && mounted) {
+        final data = Map<String, dynamic>.from(call.arguments as Map);
+        final id = data['botId'] as int?;
+        if (id != null && id >= 0 && id < botInventoryNotifiers.length) {
+          final old = Map<String, dynamic>.from(botInventoryNotifiers[id].value);
+          final slots = List<dynamic>.from(old['slots'] as List? ?? <dynamic>[]);
+          final incoming = List<dynamic>.from(data['slots'] as List? ?? <dynamic>[]);
+          if (data['patch'] == true) {
+            for (final raw in incoming) {
+              final item = Map<String, dynamic>.from(raw as Map);
+              final slot = item['slot'] as int? ?? -1;
+              if (slot >= 0 && slot < 46) {
+                while (slots.length <= slot) { slots.add({'slot': slots.length, 'id': -1, 'count': 0}); }
+                slots[slot] = item;
+              }
+            }
+          } else {
+            slots
+              ..clear()
+              ..addAll(incoming);
+          }
+          botInventoryNotifiers[id].value = {'slots': slots, 'received': true};
         }
       } else if (call.method == 'botStatus' && mounted) {
         final data = Map<String, dynamic>.from(call.arguments as Map);
@@ -663,6 +687,64 @@ class _LiveWorldScreenState extends State<LiveWorldScreen> {
     _step(0, 0);
   }
 
+  void _showInventory() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: panel,
+        title: const Text('ИНВЕНТАРЬ БОТА'),
+        content: SizedBox(
+          width: 420,
+          child: ValueListenableBuilder<Map<String, dynamic>>(
+            valueListenable: botInventoryNotifiers[widget.botId],
+            builder: (context, inventory, _) {
+              final slots = List<dynamic>.from(inventory['slots'] as List? ?? <dynamic>[]);
+              if (inventory['received'] != true || slots.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Text('Пока нет данных инвентаря. Подключи бота и дождись обновления от сервера.'),
+                );
+              }
+              List<int> validSlots(Iterable<int> values) => values.where((i) => i < slots.length).toList();
+              Widget section(String title, Iterable<int> indexes) {
+                final selected = validSlots(indexes);
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(title, style: const TextStyle(color: purple, fontWeight: FontWeight.bold, fontSize: 12)),
+                    const SizedBox(height: 7),
+                    Wrap(spacing: 5, runSpacing: 5, children: selected.map((slot) {
+                      final item = Map<String, dynamic>.from(slots[slot] as Map);
+                      final id = item['id'] as int? ?? -1;
+                      final count = item['count'] as int? ?? 0;
+                      return Container(
+                        width: 48, height: 48,
+                        decoration: BoxDecoration(color: deepPurple, borderRadius: BorderRadius.circular(7), border: Border.all(color: Colors.white12)),
+                        child: Stack(children: [
+                          Center(child: Text(id < 0 || count <= 0 ? '·' : '#$id', style: TextStyle(color: count <= 0 ? Colors.white24 : Colors.white, fontSize: 11, fontWeight: FontWeight.bold))),
+                          Positioned(left: 3, top: 2, child: Text('$slot', style: const TextStyle(color: Colors.white38, fontSize: 8))),
+                          if (count > 0) Positioned(right: 3, bottom: 2, child: Text('$count', style: const TextStyle(color: Colors.white, fontSize: 10))),
+                        ]),
+                      );
+                    }).toList()),
+                  ]),
+                );
+              }
+              return SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                section('БРОНЯ (слоты 5–8)', List.generate(4, (i) => i + 5)),
+                section('ОСНОВНОЙ ИНВЕНТАРЬ (9–35)', List.generate(27, (i) => i + 9)),
+                section('ПАНЕЛЬ БЫСТРОГО ДОСТУПА (36–44)', List.generate(9, (i) => i + 36)),
+                section('ЛЕВАЯ РУКА (45)', [45]),
+                section('КРАФТИНГ (0–4)', List.generate(5, (i) => i)),
+              ]));
+            },
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Закрыть'))],
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _holdTimer?.cancel();
@@ -674,7 +756,10 @@ class _LiveWorldScreenState extends State<LiveWorldScreen> {
     appBar: AppBar(
       backgroundColor: deepPurple,
       title: const Text('BOT GAME VIEW • CONTROL'),
-      actions: [IconButton(tooltip: 'Прыжок', onPressed: () => _step(0, 0, jump: true), icon: const Icon(Icons.arrow_upward, color: purple))],
+      actions: [
+        IconButton(tooltip: 'Инвентарь бота', onPressed: _showInventory, icon: const Icon(Icons.inventory_2, color: purple)),
+        IconButton(tooltip: 'Прыжок', onPressed: () => _step(0, 0, jump: true), icon: const Icon(Icons.arrow_upward, color: purple)),
+      ],
     ),
     body: SafeArea(child: ValueListenableBuilder<Map<String, dynamic>>(
       valueListenable: botWorldNotifiers[widget.botId],

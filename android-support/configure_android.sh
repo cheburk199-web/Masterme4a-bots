@@ -53,6 +53,19 @@ GRADLE_DEPENDENCY
   fi
 fi
 
+if ! grep -q "org.geysermc.mcprotocollib:protocol:1.21.4-1" "$APP_GRADLE"; then
+  echo "MCProtocolLib dependency was not added to $APP_GRADLE" >&2
+  exit 1
+fi
+if ! grep -q "repo.opencollab.dev/main" "$SETTINGS"; then
+  echo "OpenCollab Maven repository was not added to $SETTINGS" >&2
+  exit 1
+fi
+echo "Gradle dependency:"
+grep -n "org.geysermc.mcprotocollib:protocol" "$APP_GRADLE"
+echo "Maven repository:"
+grep -n "repo.opencollab.dev/main" "$SETTINGS"
+
 mkdir -p android/app/src/main/java/com/example/masterme4a_bot_control
 cp android-support/MainActivity.java android/app/src/main/java/com/example/masterme4a_bot_control/MainActivity.java
 rm -f android/app/src/main/kotlin/com/example/masterme4a_bot_control/MainActivity.kt

@@ -1019,7 +1019,7 @@ class _LiveFirstPersonPainter extends CustomPainter {
     final hue = ((state * 47 + 95) % 360).toDouble();
     final sat = 0.38 + (state % 5) * 0.045;
     final light = (0.42 + (state % 7) * 0.018) * shade;
-    return HSLColor.fromAHSL(1, hue, sat, light.clamp(0.12, 0.78)).toColor();
+    return HSLColor.fromAHSL(1, hue, sat, light.clamp(0.12, 0.78).toDouble()).toColor();
   }
 
   @override
@@ -1087,7 +1087,7 @@ class _LiveFirstPersonPainter extends CustomPainter {
         var dz = forward[2] + right[2]*nx + up[2]*ny;
         final len = math.sqrt(dx*dx+dy*dy+dz*dz);
         dx/=len; dy/=len; dz/=len;
-        Color color = Color.lerp(const Color(0xFF9CB9CF), const Color(0xFF384451), (py/rh).clamp(0.0,1.0))!;
+        Color color = Color.lerp(const Color(0xFF9CB9CF), const Color(0xFF384451), (py/rh).clamp(0.0,1.0).toDouble())!;
         var distance = .18;
         while (distance < 58) {
           final wx = (eyeX + dx*distance).floor();
@@ -1110,7 +1110,7 @@ class _LiveFirstPersonPainter extends CustomPainter {
       }
     }
     // Simple Minecraft-style hotbar overlay.
-    final barW = math.min(size.width*.58, 270.0), slot = barW/9;
+    final barW = math.min(size.width*.58, 270.0).toDouble(), slot = barW/9;
     final barLeft = (size.width-barW)/2, barTop = size.height-34;
     final barPaint = Paint()..color = const Color(0xB91A1720);
     canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(barLeft-4,barTop-4,barW+8,30),const Radius.circular(5)),barPaint);

@@ -402,26 +402,39 @@ public class MainActivity extends FlutterActivity {
         int[] topStates = new int[256];
         int[] topHeights = new int[256];
         Arrays.fill(topHeights, Integer.MIN_VALUE);
+        java.util.ArrayList<java.util.Map<String, Object>> fullSections = new java.util.ArrayList<>();
         int sectionIndex = 0;
         try {
             while (data.isReadable() && sectionIndex < 32) {
                 ChunkSection section = route.codecHelper.readChunkSection(data);
-                int sectionBaseY = (sectionIndex - 4) * 16; // vanilla Overworld section range starts at -4
+                int sectionBaseY = (sectionIndex - 4) * 16;
+                java.util.ArrayList<Integer> blockIndices = new java.util.ArrayList<>();
+                java.util.ArrayList<Integer> blockStates = new java.util.ArrayList<>();
                 for (int localY = 0; localY < 16; localY++) {
                     for (int localZ = 0; localZ < 16; localZ++) {
                         for (int localX = 0; localX < 16; localX++) {
                             int state = section.getBlock(localX, localY, localZ);
-                            int index = localZ * 16 + localX;
-                            if (state != 0 && sectionBaseY + localY > topHeights[index]) {
-                                topStates[index] = state;
-                                topHeights[index] = sectionBaseY + localY;
+                            int index = (localY * 256) + (localZ * 16) + localX;
+                            if (state != 0) {
+                                blockIndices.add(index);
+                                blockStates.add(state);
+                            }
+                            int column = localZ * 16 + localX;
+                            if (state != 0 && sectionBaseY + localY > topHeights[column]) {
+                                topStates[column] = state;
+                                topHeights[column] = sectionBaseY + localY;
                             }
                         }
                     }
                 }
+                java.util.HashMap<String, Object> sectionPayload = new java.util.HashMap<>();
+                sectionPayload.put("sectionY", sectionIndex - 4);
+                sectionPayload.put("indices", blockIndices);
+                sectionPayload.put("states", blockStates);
+                fullSections.add(sectionPayload);
                 sectionIndex++;
             }
-            emitChunk(botId, packet.getX(), packet.getZ(), topStates, topHeights);
+            emitChunk(botId, packet.getX(), packet.getZ(), topStates, topHeights, fullSections);
         } catch (Exception e) {
             emitEvent(botId, "Не удалось разобрать чанк: " + e.getMessage(), "chunk-decode");
         } finally {
@@ -429,7 +442,8 @@ public class MainActivity extends FlutterActivity {
         }
     }
 
-    private void emitChunk(int botId, int chunkX, int chunkZ, int[] states, int[] heights) {
+    private void emitChunk(int botId, int chunkX, int chunkZ, int[] states, int[] heights,
+                           java.util.ArrayList<java.util.Map<String, Object>> sections) {
         mainHandler.post(() -> {
             if (channel == null) return;
             java.util.HashMap<String, Object> payload = new java.util.HashMap<>();
@@ -444,6 +458,9 @@ public class MainActivity extends FlutterActivity {
             }
             payload.put("states", stateList);
             payload.put("heights", heightList);
+            // Sparse 3D block data: each section stores local voxel indices (0..4095)
+            // and the corresponding registry block-state IDs. No fake colors or textures.
+            payload.put("sections", sections);
             channel.invokeMethod("botChunk", payload);
         });
     }

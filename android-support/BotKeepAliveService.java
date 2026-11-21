@@ -18,7 +18,10 @@ public class BotKeepAliveService extends Service {
     public void onCreate() {
         super.onCreate();
         createNotificationChannel();
-        Notification notification = new Notification.Builder(this, CHANNEL_ID)
+        Notification.Builder builder;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) builder = new Notification.Builder(this, CHANNEL_ID);
+        else builder = new Notification.Builder(this);
+        Notification notification = builder
                 .setContentTitle("MASTERME4A Bots")
                 .setContentText("Боты продолжают работать в фоне")
                 .setSmallIcon(android.R.drawable.stat_notify_sync)
@@ -51,7 +54,7 @@ public class BotKeepAliveService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        return START_STICKY;
+        return START_NOT_STICKY;
     }
 
     @Override

@@ -577,8 +577,8 @@ class _WorldScreenState extends State<WorldScreen> {
                       lastDragPoint = details.localPosition;
                       setState(() {
                         radarYaw += delta.dx * 0.012;
-                        radarYaw = radarYaw % (math.pi * 2);
-                        radarZoom = (radarZoom + delta.dy * 0.003).clamp(0.6, 1.8);
+                        radarYaw = ((radarYaw + math.pi) % (math.pi * 2)) - math.pi;
+                        radarZoom = (radarZoom + delta.dy * 0.003).clamp(0.6, 1.8).toDouble();
                       });
                     },
                     onPanEnd: (_) => lastDragPoint = null,

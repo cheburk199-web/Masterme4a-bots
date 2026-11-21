@@ -8,6 +8,9 @@ const purple = Color(0xFF9B5CFF);
 const deepPurple = Color(0xFF160D27);
 const panel = Color(0xFF241638);
 const minecraftProtocol = 769; // Java 1.21.4
+const holyWorldLiteCommand = '/lite';
+const holyWorldFirstMenuSlot = 3;
+const holyWorldTrioLiteSlot = 25;
 
 enum ConnectionMode { microsoft, nickname }
 
@@ -151,8 +154,6 @@ class _DashboardState extends State<Dashboard> {
   String? serverVersion;
   int? onlinePlayers;
   int? maxPlayers;
-  final List<String> gameModes = const ['СолоЛайт', 'ДуоЛайт', 'ТриоЛайт', 'КланЛайт'];
-  String selectedMode = 'ТриоЛайт';
   BotProfile get current => bots[active];
 
   @override
@@ -212,7 +213,7 @@ class _DashboardState extends State<Dashboard> {
       notice('Microsoft OAuth ещё не реализован. Не вводи пароль в приложение.');
       return;
     }
-    notice('Выбран режим $selectedMode. Автоматический вход в лобби и режим ещё не подключён.');
+    notice('Маршрут настроен: /lite → слот 3 → слот 25. Игровой вход и отправка кликов ещё не реализованы.');
   }
 
   @override
@@ -233,7 +234,7 @@ class _DashboardState extends State<Dashboard> {
         Card(color: panel, child: const ListTile(
           leading: Icon(Icons.dns, color: purple, size: 32),
           title: Text('Minecraft Java 1.21.4', style: TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: Text('Сетевой модуль: Status Ping'),
+          subtitle: Text('Сетевой модуль: Status Ping (без входа в мир)'),
           trailing: Chip(label: Text('ЭТАП 1')),
         )),
         const SizedBox(height: 18),
@@ -271,21 +272,31 @@ class _DashboardState extends State<Dashboard> {
             TextField(controller: port, keyboardType: TextInputType.number,
               decoration: const InputDecoration(labelText: 'Порт', border: OutlineInputBorder())),
             const SizedBox(height: 14),
-            const Text('РЕЖИМ HOLYWORLD', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('АВТОВЫБОР HOLYWORLD LITE', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              value: selectedMode,
-              decoration: const InputDecoration(
-                labelText: 'Режим по умолчанию',
-                prefixIcon: Icon(Icons.sports_esports),
-                border: OutlineInputBorder(),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: deepPurple,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: purple.withOpacity(.55)),
               ),
-              items: gameModes.map((modeName) => DropdownMenuItem(
-                value: modeName, child: Text(modeName),
-              )).toList(),
-              onChanged: (value) {
-                if (value != null) setState(() => selectedMode = value);
-              },
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Команда чата: /lite'),
+                  SizedBox(height: 6),
+                  Text('Первое меню: слот 3'),
+                  SizedBox(height: 6),
+                  Text('Второе меню: слот 25'),
+                  SizedBox(height: 6),
+                  Text('Цель: ТриоЛайт №25', style: TextStyle(fontWeight: FontWeight.bold, color: purple)),
+                  SizedBox(height: 10),
+                  Text('Настройки маршрута сохранены. Реальное подключение к игровому миру и клики по слотам пока не реализованы.',
+                    style: TextStyle(color: Colors.white70, height: 1.35)),
+                ],
+              ),
             ),
             const SizedBox(height: 12),
             SizedBox(width: double.infinity, child: OutlinedButton.icon(
@@ -327,7 +338,7 @@ class _DashboardState extends State<Dashboard> {
         const Card(color: panel, child: Padding(
           padding: EdgeInsets.all(14),
           child: Text(
-            'Этап 1 реализует реальный Minecraft Java Status Ping: TCP-соединение, Handshake и запрос статуса. Он проверяет доступность сервера, но не входит в игровой мир. Следующий этап — Login Start и обработка пакетов входа на сервере, который разрешает offline-mode.',
+            'Сейчас приложение проверяет доступность сервера через Minecraft Status Ping. Оно ещё не входит в игровой мир и не отправляет команду /lite или клики по слотам. Для следующего этапа нужна полноценная реализация Login/Play протокола 1.21.4 с разрешённой сервером авторизацией.',
             style: TextStyle(color: Colors.white70, height: 1.4)),
         )),
       ]),

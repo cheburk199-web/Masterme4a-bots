@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 void main() => runApp(const Masterme4aApp());
 const purple = Color(0xFF9B5CFF);
@@ -144,7 +145,9 @@ class Dashboard extends StatefulWidget {
 }
 
 class _DashboardState extends State<Dashboard> {
+  static const MethodChannel _botChannel = MethodChannel('masterme4a/bot_control');
   final bots = List.generate(5, (i) => BotProfile(i + 1));
+  final botMessages = List<String>.filled(5, 'Отключён');
   final host = TextEditingController(text: 'lite.holyworld.me');
   final port = TextEditingController(text: '25565');
   int active = 0;
@@ -155,6 +158,21 @@ class _DashboardState extends State<Dashboard> {
   int? onlinePlayers;
   int? maxPlayers;
   BotProfile get current => bots[active];
+
+  @override
+  void initState() {
+    super.initState();
+    _botChannel.setMethodCallHandler((call) async {
+      if (call.method == 'botStatus' && mounted) {
+        final data = Map<String, dynamic>.from(call.arguments as Map);
+        final id = data['botId'] as int?;
+        final message = data['message']?.toString() ?? 'Нет данных';
+        if (id != null && id >= 0 && id < botMessages.length) {
+          setState(() => botMessages[id] = message);
+        }
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -208,12 +226,43 @@ class _DashboardState extends State<Dashboard> {
     }
   }
 
-  void startConnection() {
+  Future<void> startConnection() async {
     if (mode == ConnectionMode.microsoft) {
-      notice('Microsoft OAuth ещё не реализован. Не вводи пароль в приложение.');
+      notice('Microsoft OAuth ещё не подключён. Не вводи пароль в приложение.');
       return;
     }
-    notice('Маршрут настроен: /lite → слот 3 → слот 25. Игровой вход и отправка кликов ещё не реализованы.');
+    final nickname = current.nickname.text.trim();
+    final address = host.text.trim();
+    final serverPort = int.tryParse(port.text.trim());
+    if (nickname.isEmpty || address.isEmpty || serverPort == null || serverPort < 1 || serverPort > 65535) {
+      notice('Проверь ник, адрес сервера и порт.');
+      return;
+    }
+    setState(() => botMessages[active] = 'Запуск подключения…');
+    try {
+      await _botChannel.invokeMethod<bool>('connectBot', {
+        'botId': active,
+        'nickname': nickname,
+        'host': address,
+        'port': serverPort,
+      });
+      notice('Подключение профиля \${active + 1} запущено.');
+    } on PlatformException catch (error) {
+      setState(() => botMessages[active] = error.message ?? 'Ошибка подключения');
+      notice(error.message ?? 'Не удалось запустить бота.');
+    } catch (error) {
+      setState(() => botMessages[active] = 'Ошибка: $error');
+      notice('Ошибка запуска: $error');
+    }
+  }
+
+  Future<void> disconnectCurrent() async {
+    try {
+      await _botChannel.invokeMethod<bool>('disconnectBot', {'botId': active});
+      if (mounted) setState(() => botMessages[active] = 'Отключён');
+    } catch (error) {
+      notice('Не удалось отключить профиль: $error');
+    }
   }
 
   @override
@@ -234,7 +283,7 @@ class _DashboardState extends State<Dashboard> {
         Card(color: panel, child: const ListTile(
           leading: Icon(Icons.dns, color: purple, size: 32),
           title: Text('Minecraft Java 1.21.4', style: TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: Text('Сетевой модуль: Status Ping (без входа в мир)'),
+          subtitle: Text('Сетевой модуль: MCProtocolLib · Java 1.21.4'),
           trailing: Chip(label: Text('ЭТАП 1')),
         )),
         const SizedBox(height: 18),
@@ -293,7 +342,7 @@ class _DashboardState extends State<Dashboard> {
                   SizedBox(height: 6),
                   Text('Цель: ТриоЛайт №25', style: TextStyle(fontWeight: FontWeight.bold, color: purple)),
                   SizedBox(height: 10),
-                  Text('Настройки маршрута сохранены. Реальное подключение к игровому миру и клики по слотам пока не реализованы.',
+                  Text('После входа приложение отправляет /lite и выбирает 3-й, затем 25-й слот при получении меню. Вход по нику возможен только на серверах, разрешающих offline-mode.',
                     style: TextStyle(color: Colors.white70, height: 1.35)),
                 ],
               ),
@@ -307,7 +356,13 @@ class _DashboardState extends State<Dashboard> {
             const SizedBox(height: 8),
             SizedBox(width: double.infinity, child: FilledButton.icon(
               onPressed: startConnection, icon: const Icon(Icons.login),
-              label: const Text('Войти профилем (следующий этап)'))),
+              label: const Text('Подключить профиль'))),
+            const SizedBox(height: 8),
+            Text('Состояние BOT ${active + 1}: ${botMessages[active]}', style: const TextStyle(color: Colors.white70)),
+            const SizedBox(height: 8),
+            SizedBox(width: double.infinity, child: OutlinedButton.icon(
+              onPressed: disconnectCurrent, icon: const Icon(Icons.link_off),
+              label: const Text('Отключить профиль'))),
           ]),
         )),
         const SizedBox(height: 14),
@@ -338,7 +393,7 @@ class _DashboardState extends State<Dashboard> {
         const Card(color: panel, child: Padding(
           padding: EdgeInsets.all(14),
           child: Text(
-            'Сейчас приложение проверяет доступность сервера через Minecraft Status Ping. Оно ещё не входит в игровой мир и не отправляет команду /lite или клики по слотам. Для следующего этапа нужна полноценная реализация Login/Play протокола 1.21.4 с разрешённой сервером авторизацией.',
+            'Игровое подключение реализовано через MCProtocolLib для Java 1.21.4. Режим по нику работает только если сервер разрешает offline-mode; он не обходит online-mode и не подменяет Microsoft-авторизацию. Если сервер требует лицензионный вход, бот будет отклонён. Microsoft OAuth пока не реализован.',
             style: TextStyle(color: Colors.white70, height: 1.4)),
         )),
       ]),

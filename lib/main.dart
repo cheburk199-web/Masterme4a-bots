@@ -648,10 +648,10 @@ class LiveWorldScreen extends StatelessWidget {
           Card(color: panel, child: Padding(padding: const EdgeInsets.all(16), child: Column(children: [
             const Text('ДАННЫЕ МИРА', style: TextStyle(color: purple, fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
-            item('Загруженные чанки', '\${w['loadedChunks'] ?? 0}'),
-            item('Получено данных чанков', '\${((w['chunkDataBytes'] ?? 0) / 1024).toStringAsFixed(1)} KB'),
-            item('Обновления блоков', '\${w['blockUpdates'] ?? 0}'),
-            item('Последний чанк', '\${w['lastChunkX'] ?? 0}, \${w['lastChunkZ'] ?? 0}'),
+            item('Загруженные чанки', (w['loadedChunks'] ?? 0).toString()),
+            item('Получено данных чанков', '${((w['chunkDataBytes'] as num? ?? 0) / 1024).toStringAsFixed(1)} KB'),
+            item('Обновления блоков', (w['blockUpdates'] ?? 0).toString()),
+            item('Последний чанк', '${w['lastChunkX'] ?? 0}, ${w['lastChunkZ'] ?? 0}'),
           ]))),
           const Card(color: panel, child: Padding(padding: EdgeInsets.all(16), child: Text(
             'Это реальные координаты и чанковые пакеты от сервера. Сейчас экран — телеметрия; декодирование палитр блоков и полноценная 3D-отрисовка ещё впереди. Я не выдаю декоративную карту за настоящий мир.',

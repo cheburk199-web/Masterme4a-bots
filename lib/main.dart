@@ -13,6 +13,8 @@ const minecraftProtocol = 769; // Java 1.21.4
 const holyWorldLiteCommand = '/lite';
 const holyWorldFirstMenuSlot = 3;
 const holyWorldTrioLiteSlot = 25;
+final List<ValueNotifier<Map<String, dynamic>>> botWorldNotifiers = List.generate(5, (_) =>
+  ValueNotifier<Map<String, dynamic>>({'joined': false, 'hasPosition': false, 'x': 0.0, 'y': 0.0, 'z': 0.0, 'yaw': 0.0, 'pitch': 0.0, 'loadedChunks': 0, 'chunkDataBytes': 0, 'blockUpdates': 0, 'lastChunkX': 0, 'lastChunkZ': 0}));
 
 enum ConnectionMode { microsoft, nickname }
 
@@ -178,6 +180,10 @@ class _DashboardState extends State<Dashboard> {
             if (botActivity[id].length > 80) botActivity[id].removeRange(0, botActivity[id].length - 80);
           });
         }
+      } else if (call.method == 'botWorld' && mounted) {
+        final data = Map<String, dynamic>.from(call.arguments as Map);
+        final id = data['botId'] as int?;
+        if (id != null && id >= 0 && id < botWorldNotifiers.length) botWorldNotifiers[id].value = data;
       } else if (call.method == 'botStatus' && mounted) {
         final data = Map<String, dynamic>.from(call.arguments as Map);
         final id = data['botId'] as int?;
@@ -317,10 +323,10 @@ class _DashboardState extends State<Dashboard> {
           )),
         ),
         IconButton(
-          tooltip: 'Minecraft от первого лица',
+          tooltip: 'Живые данные мира Minecraft',
           icon: const Icon(Icons.videogame_asset, color: purple),
           onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-            builder: (_) => const Demo3DScreen(),
+            builder: (_) => LiveWorldScreen(botId: active),
           )),
         ),
       ],
@@ -605,6 +611,55 @@ class _WorldScreenState extends State<WorldScreen> {
         )),
       ],
     )),
+  );
+}
+
+
+class LiveWorldScreen extends StatelessWidget {
+  const LiveWorldScreen({super.key, required this.botId});
+  final int botId;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(backgroundColor: deepPurple, title: const Text('LIVE WORLD • ЭТАП 1')),
+    body: ValueListenableBuilder<Map<String, dynamic>>(
+      valueListenable: botWorldNotifiers[botId],
+      builder: (context, w, _) {
+        String val(String key) {
+          final v = w[key];
+          return v is num ? v.toStringAsFixed(2) : '—';
+        }
+        Widget item(String label, String value) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          child: Row(children: [Expanded(child: Text(label, style: const TextStyle(color: Colors.white60))), Text(value, style: const TextStyle(fontWeight: FontWeight.bold))]),
+        );
+        return ListView(padding: const EdgeInsets.all(16), children: [
+          Card(color: panel, child: ListTile(
+            leading: Icon(w['joined'] == true ? Icons.sensors : Icons.wifi_off, color: purple),
+            title: Text(w['joined'] == true ? 'Бот в игровом мире' : 'Бот не вошёл'),
+            subtitle: const Text('Данные приходят из пакетов Minecraft-сервера'),
+          )),
+          Card(color: panel, child: Padding(padding: const EdgeInsets.all(16), child: Column(children: [
+            const Text('ПОЗИЦИЯ И ПОВОРОТ КАМЕРЫ', style: TextStyle(color: purple, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            item('X', val('x')), item('Y', val('y')), item('Z', val('z')),
+            item('Yaw', val('yaw')), item('Pitch', val('pitch')),
+          ]))),
+          Card(color: panel, child: Padding(padding: const EdgeInsets.all(16), child: Column(children: [
+            const Text('ДАННЫЕ МИРА', style: TextStyle(color: purple, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            item('Загруженные чанки', '\${w['loadedChunks'] ?? 0}'),
+            item('Получено данных чанков', '\${((w['chunkDataBytes'] ?? 0) / 1024).toStringAsFixed(1)} KB'),
+            item('Обновления блоков', '\${w['blockUpdates'] ?? 0}'),
+            item('Последний чанк', '\${w['lastChunkX'] ?? 0}, \${w['lastChunkZ'] ?? 0}'),
+          ]))),
+          const Card(color: panel, child: Padding(padding: EdgeInsets.all(16), child: Text(
+            'Это реальные координаты и чанковые пакеты от сервера. Сейчас экран — телеметрия; декодирование палитр блоков и полноценная 3D-отрисовка ещё впереди. Я не выдаю декоративную карту за настоящий мир.',
+            style: TextStyle(color: Colors.white70, height: 1.4),
+          ))),
+        ]);
+      },
+    ),
   );
 }
 

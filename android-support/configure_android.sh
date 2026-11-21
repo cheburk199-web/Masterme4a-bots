@@ -38,19 +38,19 @@ if settings.exists():
     settings_text = settings.read_text()
     open_collab = 'maven("https://repo.opencollab.dev/main/") { name = "opencollab" }'
     if open_collab not in settings_text:
-        pattern = r"(dependencyResolutionManagement\\s*\\{\\s*repositories\\s*\\{)"
-        settings_text, count = re.subn(pattern, lambda match: match.group(1) + "\\n        " + open_collab, settings_text, count=1)
+        pattern = r"(dependencyResolutionManagement\s*\{\s*repositories\s*\{)"
+        settings_text, count = re.subn(pattern, lambda match: match.group(1) + "\n        " + open_collab, settings_text, count=1)
         if count == 0:
-            settings_text += "\\ndependencyResolutionManagement {\\n    repositories {\\n        " + open_collab + "\\n    }\\n}\\n"
+            settings_text += "\ndependencyResolutionManagement {\n    repositories {\n        " + open_collab + "\n    }\n}\n"
         settings.write_text(settings_text)
 
 app_text = app.read_text()
 dependency = "org.geysermc.mcprotocollib:protocol:1.21.4-1"
 if dependency not in app_text:
     if app.name.endswith(".kts"):
-        app_text += '\ndependencies {\n    implementation("com.github.GeyserMC:MCProtocolLib:1.21.4-1")\n}\n'
+        app_text += '\ndependencies {\n    implementation("org.geysermc.mcprotocollib:protocol:1.21.4-1")\n}\n'
     else:
-        app_text += "\ndependencies {\n    implementation 'com.github.GeyserMC:MCProtocolLib:1.21.4-1'\n}\n"
+        app_text += "\ndependencies {\n    implementation 'org.geysermc.mcprotocollib:protocol:1.21.4-1'\n}\n"
     app.write_text(app_text)
 
 manifest = Path("android/app/src/main/AndroidManifest.xml")

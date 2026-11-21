@@ -70,7 +70,7 @@ if dependency not in app_text:
 # from the Android APK merge step (Kotlin or Groovy Gradle syntax).
 if "META-INF/INDEX.LIST" not in app_text:
     if app.name.endswith(".kts"):
-        app_text += '\\nandroid {\\n    packaging {\\n        resources {\\n            excludes += "META-INF/INDEX.LIST"\\n        }\\n    }\\n}\\n'
+        app_text += '\nandroid {\n    packaging {\n        resources {\n            excludes += "META-INF/INDEX.LIST"\n        }\n    }\n}\n'
     else:
         app_text += "\\nandroid {\\n    packagingOptions {\\n        exclude 'META-INF/INDEX.LIST'\\n    }\\n}\\n"
     app.write_text(app_text)

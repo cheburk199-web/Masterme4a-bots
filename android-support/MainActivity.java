@@ -45,6 +45,7 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.level.Serve
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.inventory.ServerboundContainerClickPacket;
 import org.geysermc.mcprotocollib.protocol.data.game.inventory.ContainerActionType;
 import org.geysermc.mcprotocollib.protocol.data.game.inventory.ClickItemAction;
+import org.geysermc.mcprotocollib.protocol.data.game.inventory.DropItemAction;
 import org.geysermc.mcprotocollib.protocol.data.game.item.ItemStack;
 
 public class MainActivity extends FlutterActivity {
@@ -68,6 +69,8 @@ public class MainActivity extends FlutterActivity {
         volatile float playerYaw = 0, playerPitch = 0;
         volatile boolean hasPosition = false;
         volatile MinecraftCodecHelper codecHelper;
+        volatile int inventoryStateId = 0;
+        volatile ItemStack[] inventoryItems = new ItemStack[46];
     }
 
     @Override
@@ -124,6 +127,16 @@ public class MainActivity extends FlutterActivity {
             } catch (Exception e) {
                 result.error("LOOK_BOT", e.getMessage(), null);
             }
+        } else if ("inventoryClick".equals(call.method)) {
+            try {
+                int botId = ((Number) call.argument("botId")).intValue();
+                int slot = ((Number) call.argument("slot")).intValue();
+                String action = String.valueOf(call.argument("action"));
+                sendInventoryClick(botId, slot, action);
+                result.success(true);
+            } catch (Exception e) {
+                result.error("INVENTORY_CLICK", e.getMessage(), null);
+            }
         } else if ("disconnectBot".equals(call.method)) {
             int botId = ((Number) call.argument("botId")).intValue();
             disconnectBot(botId);
@@ -134,6 +147,35 @@ public class MainActivity extends FlutterActivity {
         } else {
             result.notImplemented();
         }
+    }
+
+    private void sendInventoryClick(int botId, int slot, String action) {
+        ClientSession session = sessions.get(botId);
+        BotRoute route = routes.get(botId);
+        if (session == null || route == null || !route.joined) throw new IllegalStateException("Бот не подключён");
+        if (slot < 0 || slot >= 46) throw new IllegalArgumentException("Неверный слот");
+        ItemStack item = route.inventoryItems[slot];
+        if (item == null) throw new IllegalStateException("Слот пуст");
+        ContainerActionType mode;
+        org.geysermc.mcprotocollib.protocol.data.game.inventory.ContainerAction click;
+        if ("left".equals(action)) {
+            mode = ContainerActionType.CLICK_ITEM;
+            click = ClickItemAction.LEFT_CLICK;
+        } else if ("right".equals(action)) {
+            mode = ContainerActionType.CLICK_ITEM;
+            click = ClickItemAction.RIGHT_CLICK;
+        } else if ("drop".equals(action)) {
+            mode = ContainerActionType.DROP_ITEM;
+            click = DropItemAction.DROP_FROM_SELECTED;
+        } else if ("dropStack".equals(action)) {
+            mode = ContainerActionType.DROP_ITEM;
+            click = DropItemAction.DROP_SELECTED_STACK;
+        } else {
+            throw new IllegalArgumentException("Неизвестное действие");
+        }
+        session.send(new ServerboundContainerClickPacket(
+                0, route.inventoryStateId, slot, mode, click, null, Collections.emptyMap()
+        ));
     }
 
     private void connectBot(int botId, String nickname, String host, int port) {
@@ -209,6 +251,8 @@ public class MainActivity extends FlutterActivity {
                         } else if (packet instanceof ClientboundContainerSetContentPacket content) {
                             // Player inventory is container 0. Emit server-authoritative slots for the UI.
                             if (content.getContainerId() == 0 && content.getItems() != null) {
+                                route.inventoryStateId = content.getStateId();
+                                route.inventoryItems = Arrays.copyOf(content.getItems(), Math.max(46, content.getItems().length));
                                 emitInventory(botId, content.getItems());
                             }
                             if (route.openContainerId != content.getContainerId() || route.lastClickedContainerId == content.getContainerId() || route.stage >= 2) return;
@@ -241,7 +285,10 @@ public class MainActivity extends FlutterActivity {
                             }
                         } else if (packet instanceof ClientboundContainerSetSlotPacket slotUpdate) {
                             if (slotUpdate.getContainerId() == 0) {
-                                emitInventorySlot(botId, slotUpdate.getSlot(), slotUpdate.getItem());
+                                route.inventoryStateId = slotUpdate.getStateId();
+                                int changedSlot = slotUpdate.getSlot();
+                                if (changedSlot >= 0 && changedSlot < route.inventoryItems.length) route.inventoryItems[changedSlot] = slotUpdate.getItem();
+                                emitInventorySlot(botId, changedSlot, slotUpdate.getItem());
                             }
                         }
                     }

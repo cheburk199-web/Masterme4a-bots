@@ -2,7 +2,6 @@ package com.example.masterme4a_bot_control;
 
 import android.os.Handler;
 import android.os.Looper;
-import androidx.annotation.NonNull;
 
 import java.net.InetSocketAddress;
 import java.util.Collections;
@@ -39,11 +38,12 @@ public class MainActivity extends FlutterActivity {
     private static final class BotRoute {
         int stage = 0;
         int openContainerId = -1;
+        int lastClickedContainerId = -1;
         boolean joined = false;
     }
 
     @Override
-    public void configureFlutterEngine(@NonNull FlutterEngine flutterEngine) {
+    public void configureFlutterEngine(FlutterEngine flutterEngine) {
         super.configureFlutterEngine(flutterEngine);
         channel = new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), CHANNEL);
         channel.setMethodCallHandler(this::handleMethodCall);
@@ -106,7 +106,7 @@ public class MainActivity extends FlutterActivity {
                     route.openContainerId = open.getContainerId();
                     emit(botId, "Открылось меню. Жду содержимое…", "menu");
                 } else if (packet instanceof ClientboundContainerSetContentPacket content) {
-                    if (route.openContainerId != content.getContainerId() || route.stage >= 2) return;
+                    if (route.openContainerId != content.getContainerId() || route.lastClickedContainerId == content.getContainerId() || route.stage >= 2) return;
                     int visibleSlotNumber = route.stage == 0 ? 3 : 25;
                     int protocolSlotIndex = visibleSlotNumber - 1;
                     if (content.getItems() == null || protocolSlotIndex >= content.getItems().length) {
@@ -123,6 +123,7 @@ public class MainActivity extends FlutterActivity {
                             null,
                             Collections.emptyMap()
                     ));
+                    route.lastClickedContainerId = content.getContainerId();
                     route.stage++;
                     if (route.stage == 1) {
                         emit(botId, "Нажал 3-й слот. Жду второе меню…", "menu");

@@ -949,9 +949,9 @@ class _VoxelDemoPainter extends CustomPainter {
         final shade = faceIndex == 4 ? 1.12 : (faceIndex == 1 || faceIndex == 0 ? .82 : .65);
         final color = Color.fromARGB(
           voxel.color.alpha,
-          (voxel.color.red * shade).round().clamp(0, 255),
-          (voxel.color.green * shade).round().clamp(0, 255),
-          (voxel.color.blue * shade).round().clamp(0, 255),
+          (voxel.color.red * shade).round().clamp(0, 255).toInt(),
+          (voxel.color.green * shade).round().clamp(0, 255).toInt(),
+          (voxel.color.blue * shade).round().clamp(0, 255).toInt(),
         );
         canvas.drawPath(path, Paint()..color = color);
         canvas.drawPath(path, Paint()

@@ -107,7 +107,7 @@ def install_faithful_textures():
 def resolve_model_texture(model_name, visited=None):
     """Resolve a block model's representative face texture, following parents."""
     visited = set() if visited is None else visited
-    model_name = model_name.removeprefix("minecraft:")
+    model_name = model_name.removeprefix("minecraft:").removeprefix("block/")
     if model_name in visited:
         return None
     visited.add(model_name)

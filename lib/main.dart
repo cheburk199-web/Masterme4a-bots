@@ -1231,16 +1231,19 @@ class _LiveFirstPersonPainter extends CustomPainter {
             final texture = textures[state];
             if (texture != null) {
               final ax = dx.abs(), ay = dy.abs(), az = dz.abs();
+              final hitX = eyeX + dx * distance;
+              final hitY = eyeY + dy * distance;
+              final hitZ = eyeZ + dz * distance;
               double u, v;
               if (ax >= ay && ax >= az) {
-                u = wz - wz.floorToDouble();
-                v = 1.0 - (wy - wy.floorToDouble());
+                u = hitZ - hitZ.floorToDouble();
+                v = 1.0 - (hitY - hitY.floorToDouble());
               } else if (ay >= ax && ay >= az) {
-                u = wx - wx.floorToDouble();
-                v = wz - wz.floorToDouble();
+                u = hitX - hitX.floorToDouble();
+                v = hitZ - hitZ.floorToDouble();
               } else {
-                u = wx - wx.floorToDouble();
-                v = 1.0 - (wy - wy.floorToDouble());
+                u = hitX - hitX.floorToDouble();
+                v = 1.0 - (hitY - hitY.floorToDouble());
               }
               color = texture.sample(u, v);
               final factor = shade.clamp(0.25, 1.15).toDouble();

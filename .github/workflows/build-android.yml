@@ -25,6 +25,19 @@ jobs:
         run: flutter create . --platforms=android
       - name: Configure native Minecraft protocol bridge
         run: bash android-support/configure_android.sh
+      - name: Fix generic MethodCall argument cast
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path('android/app/src/main/java/com/example/masterme4a_bot_control/MainActivity.java')
+          s = p.read_text()
+          s = s.replace('String nickname = String.valueOf(call.argument("nickname")).trim();', 'Object nicknameValue = call.argument("nickname");\n                String nickname = nicknameValue == null ? "" : nicknameValue.toString().trim();')
+          s = s.replace('String host = String.valueOf(call.argument("host")).trim();', 'Object hostValue = call.argument("host");\n                String host = hostValue == null ? "" : hostValue.toString().trim();')
+          if 'String.valueOf(call.argument("nickname"))' in s or 'String.valueOf(call.argument("host"))' in s:
+              raise SystemExit('Expected cast-prone expressions still present')
+          p.write_text(s)
+          PY
       - name: Disable R8 shrinking for optional MCProtocolLib classes
         shell: bash
         run: |
@@ -35,7 +48,7 @@ jobs:
               p = Path('android/app/build.gradle')
           text = p.read_text()
           if p.suffix == '.kts':
-              text += '\nandroid {\n    buildTypes {\n        release {\n            isMinifyEnabled = false\n        isShrinkResources = false\n        proguardFiles.clear()\n        proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")\n        }\n    }\n}\n'
+              text += '\nandroid {\n    buildTypes {\n        release {\n            isMinifyEnabled = false\n            isShrinkResources = false\n            proguardFiles.clear()\n            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")\n        }\n    }\n}\n'
           else:
               text += "\nandroid {\n    buildTypes {\n        release {\n            minifyEnabled false\n            shrinkResources false\n        }\n    }\n}\n"
           p.write_text(text)

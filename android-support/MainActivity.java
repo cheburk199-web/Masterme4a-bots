@@ -51,8 +51,8 @@ import org.geysermc.mcprotocollib.protocol.data.game.item.ItemStack;
 public class MainActivity extends FlutterActivity {
     private static final String CHANNEL = "masterme4a/bot_control";
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private final Map<Integer, ClientSession> sessions = new ConcurrentHashMap<>();
-    private final Map<Integer, BotRoute> routes = new ConcurrentHashMap<>();
+    private static final Map<Integer, ClientSession> sessions = new ConcurrentHashMap<>();
+    private static final Map<Integer, BotRoute> routes = new ConcurrentHashMap<>();
     private MethodChannel channel;
 
     private static final class BotRoute {
@@ -149,6 +149,16 @@ public class MainActivity extends FlutterActivity {
         }
     }
 
+    private void startKeepAliveService() {
+        android.content.Intent intent = new android.content.Intent(this, BotKeepAliveService.class);
+        if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(intent);
+        else startService(intent);
+    }
+
+    private void stopKeepAliveIfIdle() {
+        if (routes.isEmpty() && sessions.isEmpty()) stopService(new android.content.Intent(this, BotKeepAliveService.class));
+    }
+
     private void sendInventoryClick(int botId, int slot, String action) {
         ClientSession session = sessions.get(botId);
         BotRoute route = routes.get(botId);
@@ -187,6 +197,7 @@ public class MainActivity extends FlutterActivity {
             return;
         }
 
+        startKeepAliveService();
         BotRoute route = new BotRoute();
         routes.put(botId, route);
         emit(botId, "Запуск фонового подключения…", "connecting");
@@ -297,6 +308,7 @@ public class MainActivity extends FlutterActivity {
                     public void disconnected(DisconnectedEvent event) {
                         sessions.remove(botId, activeSession);
                         routes.remove(botId, route);
+                        stopKeepAliveIfIdle();
                         String reason = event.getReason() == null ? "Соединение закрыто" : event.getReason().toString();
                         emit(botId, "Сервер отключил бота: " + reason, "disconnected");
                     }
@@ -310,6 +322,7 @@ public class MainActivity extends FlutterActivity {
             } catch (Exception e) {
                 if (session != null) sessions.remove(botId, session);
                 routes.remove(botId, route);
+                stopKeepAliveIfIdle();
                 String detail = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
                 emit(botId, "Ошибка подключения: " + detail, "error");
             }
@@ -498,6 +511,7 @@ public class MainActivity extends FlutterActivity {
             } catch (Exception ignored) { }
         }
         emit(botId, "Отключён", "disconnected");
+        stopKeepAliveIfIdle();
     }
 
     private void emit(int botId, String message, String status) {
@@ -548,7 +562,7 @@ public class MainActivity extends FlutterActivity {
 
     @Override
     protected void onDestroy() {
-        for (Integer id : sessions.keySet()) disconnectBot(id);
+        // Activity lifecycle must not disconnect sessions; the foreground service keeps the process alive.
         super.onDestroy();
     }
 }

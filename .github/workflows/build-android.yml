@@ -33,7 +33,7 @@ jobs:
           if not p.exists():
               p = Path("android/settings.gradle")
           s = p.read_text()
-          pattern = r"repositories\\s*\\{[^}]*\\}"
+          pattern = r"repositories\s*\{[^}]*\}"
           replacement = """repositories {
                   google()
                   mavenCentral()

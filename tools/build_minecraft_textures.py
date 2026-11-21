@@ -299,22 +299,24 @@ def main():
         for state_id in range(int(first), int(last) + 1):
             state_lookup[str(state_id)] = name
 
-    # Resolve each protocol block-state ID to real per-face PNG textures.
+    # Resolve textures once per block, not once per state ID. Some blocks
+    # have hundreds of states; repeatedly parsing the same model JSON caused
+    # the Actions texture step to take many minutes.
     state_texture_lookup = {}
     state_face_texture_lookup = {}
-    for state_id, block_name in state_lookup.items():
-        block_info = block_ranges.get(block_name, {})
+    for block_name, block_info in block_ranges.items():
+        first = int(block_info["minStateId"])
+        last = int(block_info["maxStateId"])
         candidates = block_info.get("models", [])
-        texture_name = None
+        texture_path = None
         for model_name in candidates:
             texture_name = resolve_model_texture(model_name)
             if texture_name:
-                break
-        if texture_name:
-            texture_name = texture_name.removeprefix("block/")
-            texture_path = "textures/block/" + texture_name + ".png"
-            if (TEXTURE_ROOT / (texture_name + ".png")).exists():
-                state_texture_lookup[state_id] = texture_path
+                texture_name = texture_name.removeprefix("block/")
+                if (TEXTURE_ROOT / (texture_name + ".png")).exists():
+                    texture_path = "textures/block/" + texture_name + ".png"
+                    break
+        usable = {}
         for model_name in candidates:
             faces = resolve_model_face_textures(model_name)
             usable = {
@@ -323,8 +325,13 @@ def main():
                 if (TEXTURE_ROOT / (name + ".png")).exists()
             }
             if usable:
-                state_face_texture_lookup[state_id] = usable
                 break
+        for state_id in range(first, last + 1):
+            key = str(state_id)
+            if texture_path:
+                state_texture_lookup[key] = texture_path
+            if usable:
+                state_face_texture_lookup[key] = usable
 
     if len(state_texture_lookup) < 500:
         raise SystemExit(

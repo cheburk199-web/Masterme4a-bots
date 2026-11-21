@@ -164,11 +164,11 @@ public class MainActivity extends FlutterActivity {
     private void emit(int botId, String message, String status) {
         mainHandler.post(() -> {
             if (channel != null) {
-                channel.invokeMethod("botStatus", Map.of(
-                        "botId", botId,
-                        "message", message,
-                        "status", status
-                ));
+                java.util.HashMap<String, Object> payload = new java.util.HashMap<>();
+                payload.put("botId", botId);
+                payload.put("message", message);
+                payload.put("status", status);
+                channel.invokeMethod("botStatus", payload);
             }
         });
     }

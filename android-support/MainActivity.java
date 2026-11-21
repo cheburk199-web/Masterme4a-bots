@@ -71,6 +71,7 @@ public class MainActivity extends FlutterActivity {
         volatile MinecraftCodecHelper codecHelper;
         volatile int inventoryStateId = 0;
         volatile ItemStack[] inventoryItems = new ItemStack[46];
+        volatile ItemStack carriedItem = null;
     }
 
     @Override
@@ -163,18 +164,65 @@ public class MainActivity extends FlutterActivity {
         ClientSession session = sessions.get(botId);
         BotRoute route = routes.get(botId);
         if (session == null || route == null || !route.joined) throw new IllegalStateException("Бот не подключён");
-        if (slot < 0 || slot >= 46) throw new IllegalArgumentException("Неверный слот");
+        if (slot < 0 || slot >= route.inventoryItems.length) throw new IllegalArgumentException("Неверный слот");
         ItemStack item = route.inventoryItems[slot];
-        if (item == null) throw new IllegalStateException("Слот пуст");
+        if (item == null && route.carriedItem == null) throw new IllegalStateException("В слоте и на курсоре нет предмета");
+
+        if ("left".equals(action) || "right".equals(action)) {
+            ItemStack cursor = route.carriedItem;
+            ItemStack slotAfter = item;
+            ItemStack cursorAfter = cursor;
+            if ("left".equals(action)) {
+                if (cursor == null) {
+                    cursorAfter = item;
+                    slotAfter = null;
+                } else if (item == null) {
+                    slotAfter = cursor;
+                    cursorAfter = null;
+                } else if (item.getId() == cursor.getId()
+                        && java.util.Objects.equals(item.getDataComponents(), cursor.getDataComponents())
+                        && cursor.getAmount() < 64) {
+                    int moved = Math.min(64 - cursor.getAmount(), item.getAmount());
+                    cursorAfter = new ItemStack(cursor.getId(), cursor.getAmount() + moved, cursor.getDataComponents());
+                    int left = item.getAmount() - moved;
+                    slotAfter = left > 0 ? new ItemStack(item.getId(), left, item.getDataComponents()) : null;
+                } else {
+                    slotAfter = cursor;
+                    cursorAfter = item;
+                }
+            } else {
+                if (cursor == null) {
+                    int picked = (item.getAmount() + 1) / 2;
+                    int left = item.getAmount() / 2;
+                    cursorAfter = new ItemStack(item.getId(), picked, item.getDataComponents());
+                    slotAfter = left > 0 ? new ItemStack(item.getId(), left, item.getDataComponents()) : null;
+                } else if (item == null) {
+                    slotAfter = new ItemStack(cursor.getId(), 1, cursor.getDataComponents());
+                    cursorAfter = cursor.getAmount() > 1
+                            ? new ItemStack(cursor.getId(), cursor.getAmount() - 1, cursor.getDataComponents()) : null;
+                } else if (item.getId() == cursor.getId()
+                        && java.util.Objects.equals(item.getDataComponents(), cursor.getDataComponents())
+                        && item.getAmount() < 64) {
+                    slotAfter = new ItemStack(item.getId(), item.getAmount() + 1, item.getDataComponents());
+                    cursorAfter = cursor.getAmount() > 1
+                            ? new ItemStack(cursor.getId(), cursor.getAmount() - 1, cursor.getDataComponents()) : null;
+                }
+            }
+            Map<Integer, ItemStack> changedSlots = new HashMap<>();
+            changedSlots.put(slot, slotAfter);
+            session.send(new ServerboundContainerClickPacket(
+                    0, route.inventoryStateId, slot, ContainerActionType.CLICK_ITEM,
+                    "left".equals(action) ? ClickItemAction.LEFT_CLICK : ClickItemAction.RIGHT_CLICK,
+                    cursorAfter, changedSlots
+            ));
+            // Keep the predicted cursor locally; server slot/content packets reconcile it.
+            route.carriedItem = cursorAfter;
+            return;
+        }
+
         ContainerActionType mode;
         org.geysermc.mcprotocollib.protocol.data.game.inventory.ContainerAction click;
-        if ("left".equals(action)) {
-            mode = ContainerActionType.CLICK_ITEM;
-            click = ClickItemAction.LEFT_CLICK;
-        } else if ("right".equals(action)) {
-            mode = ContainerActionType.CLICK_ITEM;
-            click = ClickItemAction.RIGHT_CLICK;
-        } else if ("drop".equals(action)) {
+        if ("drop".equals(action)) {
             mode = ContainerActionType.DROP_ITEM;
             click = DropItemAction.DROP_FROM_SELECTED;
         } else if ("dropStack".equals(action)) {
@@ -183,8 +231,18 @@ public class MainActivity extends FlutterActivity {
         } else {
             throw new IllegalArgumentException("Неизвестное действие");
         }
+        Map<Integer, ItemStack> changedSlots = new HashMap<>();
+        ItemStack cursor = route.carriedItem;
+        ItemStack slotAfter;
+        if ("dropStack".equals(action)) {
+            slotAfter = null;
+        } else {
+            int remaining = item.getAmount() - 1;
+            slotAfter = remaining > 0 ? new ItemStack(item.getId(), remaining, item.getDataComponents()) : null;
+        }
+        changedSlots.put(slot, slotAfter);
         session.send(new ServerboundContainerClickPacket(
-                0, route.inventoryStateId, slot, mode, click, null, Collections.emptyMap()
+                0, route.inventoryStateId, slot, mode, click, cursor, changedSlots
         ));
     }
 
@@ -264,6 +322,7 @@ public class MainActivity extends FlutterActivity {
                             if (content.getContainerId() == 0 && content.getItems() != null) {
                                 route.inventoryStateId = content.getStateId();
                                 route.inventoryItems = Arrays.copyOf(content.getItems(), Math.max(46, content.getItems().length));
+                                route.carriedItem = content.getCarriedItem();
                                 emitInventory(botId, content.getItems());
                             }
                             if (route.openContainerId != content.getContainerId() || route.lastClickedContainerId == content.getContainerId() || route.stage >= 2) return;
@@ -300,6 +359,8 @@ public class MainActivity extends FlutterActivity {
                                 int changedSlot = slotUpdate.getSlot();
                                 if (changedSlot >= 0 && changedSlot < route.inventoryItems.length) route.inventoryItems[changedSlot] = slotUpdate.getItem();
                                 emitInventorySlot(botId, changedSlot, slotUpdate.getItem());
+                            } else if (slotUpdate.getContainerId() == -1 && slotUpdate.getSlot() == -1) {
+                                route.carriedItem = slotUpdate.getItem();
                             }
                         }
                     }

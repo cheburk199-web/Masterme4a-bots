@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -507,6 +508,9 @@ class WorldScreen extends StatefulWidget {
 class _WorldScreenState extends State<WorldScreen> {
   final command = TextEditingController();
   Timer? refreshTimer;
+  double radarYaw = 0;
+  double radarZoom = 1.0;
+  Offset? lastDragPoint;
 
   @override
   void initState() {
@@ -563,16 +567,47 @@ class _WorldScreenState extends State<WorldScreen> {
               aspectRatio: 1.05,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: CustomPaint(
-                  painter: _WorldRadarPainter(),
-                  child: const Center(child: Text('BOT', style: TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12,
-                  ))),
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.grab,
+                  child: GestureDetector(
+                    onPanStart: (details) => lastDragPoint = details.localPosition,
+                    onPanUpdate: (details) {
+                      final previous = lastDragPoint ?? details.localPosition;
+                      final delta = details.localPosition - previous;
+                      lastDragPoint = details.localPosition;
+                      setState(() {
+                        radarYaw += delta.dx * 0.012;
+                        radarYaw = radarYaw % (math.pi * 2);
+                        radarZoom = (radarZoom + delta.dy * 0.003).clamp(0.6, 1.8);
+                      });
+                    },
+                    onPanEnd: (_) => lastDragPoint = null,
+                    child: CustomPaint(
+                      painter: _WorldRadarPainter(yaw: radarYaw, zoom: radarZoom),
+                      child: const Center(child: Text('BOT', style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12,
+                      ))),
+                    ),
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 10),
-            const Text('Пока отображается маркер бота. Координаты и ближайшие сущности появятся после подключения игровых пакетов.',
+            const SizedBox(height: 8),
+            Row(children: [
+              const Text('ПОВОРОТ', style: TextStyle(color: Colors.white70, fontSize: 11)),
+              Expanded(child: Slider(
+                value: radarYaw,
+                min: -math.pi,
+                max: math.pi,
+                onChanged: (value) => setState(() => radarYaw = value),
+              )),
+              IconButton(
+                tooltip: 'Сбросить обзор',
+                onPressed: () => setState(() { radarYaw = 0; radarZoom = 1; }),
+                icon: const Icon(Icons.center_focus_strong, color: purple),
+              ),
+            ]),
+            const Text('Зажми и веди мышью или пальцем по радару: горизонтально — вращение, вертикально — масштаб. Бот пока остаётся в центре.',
               style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.35)),
           ]),
         )),
@@ -625,6 +660,10 @@ class _WorldScreenState extends State<WorldScreen> {
 }
 
 class _WorldRadarPainter extends CustomPainter {
+  _WorldRadarPainter({required this.yaw, required this.zoom});
+  final double yaw;
+  final double zoom;
+
   @override
   void paint(Canvas canvas, Size size) {
     final background = Paint()..color = const Color(0xFF10091B);
@@ -642,6 +681,11 @@ class _WorldRadarPainter extends CustomPainter {
     }
 
     final center = Offset(size.width / 2, size.height / 2);
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(yaw);
+    canvas.scale(zoom);
+    canvas.translate(-center.dx, -center.dy);
     final rings = Paint()
       ..color = const Color(0xFF9B5CFF).withOpacity(.45)
       ..style = PaintingStyle.stroke
@@ -662,6 +706,7 @@ class _WorldRadarPainter extends CustomPainter {
       ..lineTo(center.dx + 42, center.dy - 70)
       ..close();
     canvas.drawPath(cone, direction);
+    canvas.restore();
 
     final marker = Paint()..color = const Color(0xFFB98AFF);
     final bot = Path()
@@ -684,6 +729,6 @@ class _WorldRadarPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _WorldRadarPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _WorldRadarPainter oldDelegate) => oldDelegate.yaw != yaw || oldDelegate.zoom != zoom;
 }
 

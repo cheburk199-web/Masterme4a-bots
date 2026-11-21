@@ -739,7 +739,7 @@ class _Demo3DScreenState extends State<Demo3DScreen> {
                   icon: const Icon(Icons.chevron_right, color: purple, size: 30),
                 ),
                 IconButton(onPressed: resetView, icon: const Icon(Icons.center_focus_strong, color: purple)),
-              ]),              ]),
+              ]),
             ]),
           ),
         ),

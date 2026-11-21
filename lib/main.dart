@@ -41,10 +41,10 @@ class Dashboard extends StatefulWidget {
 
 class _DashboardState extends State<Dashboard> {
   final bots = List.generate(5, (i) => BotProfile(i + 1));
-  final host = TextEditingController(text: '127.0.0.1');
+  final host = TextEditingController();
   final port = TextEditingController(text: '25565');
   int active = 0;
-  ConnectionMode mode = ConnectionMode.microsoft;
+  ConnectionMode mode = ConnectionMode.nickname;
   BotProfile get current => bots[active];
 
   @override
@@ -76,7 +76,7 @@ class _DashboardState extends State<Dashboard> {
       notice('Проверь адрес сервера и порт.');
       return;
     }
-    notice('Параметры сохранены. Minecraft-протокол ещё не подключён; реального входа пока нет.');
+    notice('Адрес и ник проверены. Сетевой вход ещё не реализован — бот пока не подключён.');
   }
 
   @override
@@ -98,7 +98,7 @@ class _DashboardState extends State<Dashboard> {
           leading: Icon(Icons.dns, color: purple, size: 32),
           title: Text('Minecraft Java 1.21.4', style: TextStyle(fontWeight: FontWeight.bold)),
           subtitle: Text('Пять независимых профилей'),
-          trailing: Chip(label: Text('ПРОТОТИП')),
+          trailing: Chip(label: Text('OFFLINE UI')),
         )),
         const SizedBox(height: 18),
         const Text('ПРОФИЛИ БОТОВ', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2)),
@@ -134,19 +134,19 @@ class _DashboardState extends State<Dashboard> {
               groupValue: mode,
               onChanged: (v) => setState(() => mode = v!),
               title: const Text('По нику (offline-mode)'),
-              subtitle: const Text('Только свой сервер или локальный сервер без online-auth'),
+              subtitle: const Text('Для серверов, которые сами разрешают вход без лицензии'),
             ),
             if (mode == ConnectionMode.nickname) ...[
               const SizedBox(height: 8),
               TextField(controller: host, decoration: const InputDecoration(
-                labelText: 'Адрес своего сервера', hintText: '127.0.0.1',
+                labelText: 'Адрес offline-mode сервера', hintText: 'например, адрес своего сервера',
                 prefixIcon: Icon(Icons.computer), border: OutlineInputBorder())),
               const SizedBox(height: 10),
               TextField(controller: port, keyboardType: TextInputType.number,
                 decoration: const InputDecoration(labelText: 'Порт', border: OutlineInputBorder())),
               const Padding(
                 padding: EdgeInsets.only(top: 10),
-                child: Text('Этот режим не обходит авторизацию серверов вроде HolyWorld.',
+                child: Text('Важно: этот режим не отключает проверку лицензии на HolyWorld. Сервер должен официально разрешать offline-mode.',
                   style: TextStyle(color: Colors.orangeAccent)),
               ),
             ],
@@ -176,7 +176,7 @@ class _DashboardState extends State<Dashboard> {
         const Card(color: panel, child: Padding(
           padding: EdgeInsets.all(14),
           child: Text(
-            'Сейчас добавлен выбор режима и поля профиля. Это ещё не полноценный Minecraft-сетевой движок: протокол 1.21.4 и авторизация не реализованы, поэтому приложение не утверждает, что бот подключён. Для лицензированного режима будет использоваться только официальный вход Microsoft; пароли приложение запрашивать не должно.',
+            'Выбран режим входа по нику (offline-mode). Он работает только на серверах, где владельцы отключили online-auth. Это приложение пока является интерфейсным прототипом: Minecraft-протокол 1.21.4 и реальное подключение ещё не реализованы. Не вводи пароль Microsoft в приложение.',
             style: TextStyle(color: Colors.white70, height: 1.4),
           ),
         )),

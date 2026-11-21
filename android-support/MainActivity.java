@@ -337,6 +337,7 @@ public class MainActivity extends FlutterActivity {
                 if (routes.get(botId) == route && !route.joined) {
                     routes.remove(botId, route);
                     ClientSession pending = sessions.remove(botId);
+                    stopKeepAliveIfIdle();
                     if (pending != null) {
                         try { pending.disconnect(Component.text("Таймаут ожидания входа")); }
                         catch (Exception ignored) { }

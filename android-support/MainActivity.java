@@ -152,13 +152,16 @@ public class MainActivity extends FlutterActivity {
             }
         });
 
-        try {
-            session.connect();
-        } catch (Exception e) {
-            sessions.remove(botId);
-            routes.remove(botId);
-            emit(botId, "Ошибка подключения: " + e.getMessage(), "error");
-        }
+        Thread connector = new Thread(() -> {
+            try {
+                session.connect(false);
+            } catch (Exception e) {
+                sessions.remove(botId);
+                routes.remove(botId);
+                emit(botId, "Ошибка подключения: " + e.getMessage(), "error");
+            }
+        }, "masterme4a-connect-" + botId);
+        connector.start();
     }
 
     private void disconnectBot(int botId) {

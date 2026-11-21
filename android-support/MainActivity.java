@@ -6,7 +6,9 @@ import android.os.Looper;
 import java.net.InetSocketAddress;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
@@ -24,6 +26,11 @@ import org.geysermc.mcprotocollib.network.packet.Packet;
 import org.geysermc.mcprotocollib.protocol.MinecraftProtocol;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundLoginPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundSystemChatPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.player.ClientboundPlayerPositionPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundLevelChunkWithLightPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundForgetLevelChunkPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundBlockUpdatePacket;
+import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PositionElement;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundOpenScreenPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundContainerSetContentPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundChatCommandPacket;
@@ -44,6 +51,14 @@ public class MainActivity extends FlutterActivity {
         int openContainerId = -1;
         int lastClickedContainerId = -1;
         volatile boolean joined = false;
+        final Set<Long> loadedChunks = ConcurrentHashMap.newKeySet();
+        volatile long chunkDataBytes = 0;
+        volatile long blockUpdates = 0;
+        volatile int lastChunkX = 0;
+        volatile int lastChunkZ = 0;
+        volatile double playerX = 0, playerY = 0, playerZ = 0;
+        volatile float playerYaw = 0, playerPitch = 0;
+        volatile boolean hasPosition = false;
     }
 
     @Override
@@ -129,6 +144,29 @@ public class MainActivity extends FlutterActivity {
                             route.joined = true;
                             emit(botId, "Вошёл в игровой мир. Отправляю /lite…", "joined");
                             current.send(new ServerboundChatCommandPacket("lite"));
+                            emitWorld(botId, route);
+                        } else if (packet instanceof ClientboundPlayerPositionPacket position) {
+                            var p = position.getPosition();
+                            var relative = position.getRelatives();
+                            route.playerX = relative.contains(PositionElement.X) ? route.playerX + p.getX() : p.getX();
+                            route.playerY = relative.contains(PositionElement.Y) ? route.playerY + p.getY() : p.getY();
+                            route.playerZ = relative.contains(PositionElement.Z) ? route.playerZ + p.getZ() : p.getZ();
+                            route.playerYaw = relative.contains(PositionElement.Y_ROT) ? route.playerYaw + position.getYRot() : position.getYRot();
+                            route.playerPitch = relative.contains(PositionElement.X_ROT) ? route.playerPitch + position.getXRot() : position.getXRot();
+                            route.hasPosition = true;
+                            emitWorld(botId, route);
+                        } else if (packet instanceof ClientboundLevelChunkWithLightPacket chunk) {
+                            route.loadedChunks.add((((long) chunk.getX()) << 32) ^ (chunk.getZ() & 0xffffffffL));
+                            route.chunkDataBytes += chunk.getChunkData().length;
+                            route.lastChunkX = chunk.getX();
+                            route.lastChunkZ = chunk.getZ();
+                            emitWorld(botId, route);
+                        } else if (packet instanceof ClientboundForgetLevelChunkPacket forget) {
+                            route.loadedChunks.remove((((long) forget.getX()) << 32) ^ (forget.getZ() & 0xffffffffL));
+                            emitWorld(botId, route);
+                        } else if (packet instanceof ClientboundBlockUpdatePacket) {
+                            route.blockUpdates++;
+                            emitWorld(botId, route);
                         } else if (packet instanceof ClientboundSystemChatPacket chat) {
                             emitEvent(botId, "Чат сервера: " + chat.getContent().toString(), "chat");
                         } else if (packet instanceof ClientboundOpenScreenPacket open) {
@@ -248,6 +286,27 @@ public class MainActivity extends FlutterActivity {
                 channel.invokeMethod("botStatus", payload);
                 channel.invokeMethod("botEvent", payload);
             }
+        });
+    }
+
+    private void emitWorld(int botId, BotRoute route) {
+        mainHandler.post(() -> {
+            if (channel == null) return;
+            java.util.HashMap<String, Object> payload = new java.util.HashMap<>();
+            payload.put("botId", botId);
+            payload.put("joined", route.joined);
+            payload.put("hasPosition", route.hasPosition);
+            payload.put("x", route.playerX);
+            payload.put("y", route.playerY);
+            payload.put("z", route.playerZ);
+            payload.put("yaw", route.playerYaw);
+            payload.put("pitch", route.playerPitch);
+            payload.put("loadedChunks", route.loadedChunks.size());
+            payload.put("chunkDataBytes", route.chunkDataBytes);
+            payload.put("blockUpdates", route.blockUpdates);
+            payload.put("lastChunkX", route.lastChunkX);
+            payload.put("lastChunkZ", route.lastChunkZ);
+            channel.invokeMethod("botWorld", payload);
         });
     }
 

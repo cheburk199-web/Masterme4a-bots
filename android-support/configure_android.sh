@@ -30,10 +30,26 @@ if ! grep -q "repo.opencollab.dev/main" "$SETTINGS"; then
 fi
 
 if ! grep -q "org.geysermc.mcprotocollib:protocol" "$APP_GRADLE"; then
-  if [[ "$APP_GRADLE" == *.kts ]]; then
-    sed -i '/dependencies[[:space:]]*{/a\    implementation("org.geysermc.mcprotocollib:protocol:1.21.4-1")' "$APP_GRADLE"
+  if grep -q '^[[:space:]]*dependencies[[:space:]]*{' "$APP_GRADLE"; then
+    if [[ "$APP_GRADLE" == *.kts ]]; then
+      sed -i '/^[[:space:]]*dependencies[[:space:]]*{/a\    implementation("org.geysermc.mcprotocollib:protocol:1.21.4-1")' "$APP_GRADLE"
+    else
+      sed -i "/^[[:space:]]*dependencies[[:space:]]*{/a\\    implementation 'org.geysermc.mcprotocollib:protocol:1.21.4-1'" "$APP_GRADLE"
+    fi
+  elif [[ "$APP_GRADLE" == *.kts ]]; then
+    cat >> "$APP_GRADLE" <<'GRADLE_DEPENDENCY'
+
+dependencies {
+    implementation("org.geysermc.mcprotocollib:protocol:1.21.4-1")
+}
+GRADLE_DEPENDENCY
   else
-    sed -i "/dependencies[[:space:]]*{/a\\    implementation 'org.geysermc.mcprotocollib:protocol:1.21.4-1'" "$APP_GRADLE"
+    cat >> "$APP_GRADLE" <<'GRADLE_DEPENDENCY'
+
+dependencies {
+    implementation 'org.geysermc.mcprotocollib:protocol:1.21.4-1'
+}
+GRADLE_DEPENDENCY
   fi
 fi
 

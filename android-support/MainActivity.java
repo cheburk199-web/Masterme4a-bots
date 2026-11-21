@@ -82,105 +82,113 @@ public class MainActivity extends FlutterActivity {
         if (botId < 0 || botId > 4) throw new IllegalArgumentException("Неверный номер профиля");
         if (nickname.isEmpty() || nickname.length() > 16) throw new IllegalArgumentException("Ник должен содержать 1–16 символов");
         if (host.isEmpty() || port < 1 || port > 65535) throw new IllegalArgumentException("Проверь адрес и порт");
-        if (sessions.containsKey(botId)) {
-            emit(botId, "Подключение уже существует", "connecting");
+        if (sessions.containsKey(botId) || routes.containsKey(botId)) {
+            emit(botId, "Подключение уже выполняется или существует", "connecting");
             return;
         }
 
-        emit(botId, "Подготавливаю соединение с сервером 1.21.4…", "connecting");
         BotRoute route = new BotRoute();
         routes.put(botId, route);
+        emit(botId, "Запуск фонового подключения…", "connecting");
 
-        // Nickname-only login is supported only by servers explicitly configured for offline mode.
-        // This does not bypass online-mode authentication.
-        MinecraftProtocol protocol = new MinecraftProtocol(nickname);
-        ClientSession session = ClientNetworkSessionFactory.factory()
-                .setRemoteSocketAddress(new InetSocketAddress(host, port))
-                .setProtocol(protocol)
-                .create();
-        sessions.put(botId, session);
-
-        session.addListener(new SessionAdapter() {
-            @Override
-            public void packetReceived(Session current, Packet packet) {
-                if (packet instanceof ClientboundLoginPacket && !route.joined) {
-                    route.joined = true;
-                    emit(botId, "Вошёл в игровой мир. Отправляю /lite…", "joined");
-                    current.send(new ServerboundChatCommandPacket("lite"));
-                } else if (packet instanceof ClientboundOpenScreenPacket open) {
-                    route.openContainerId = open.getContainerId();
-                    emit(botId, "Открылось меню. Жду содержимое…", "menu");
-                } else if (packet instanceof ClientboundContainerSetContentPacket content) {
-                    if (route.openContainerId != content.getContainerId() || route.lastClickedContainerId == content.getContainerId() || route.stage >= 2) return;
-                    int visibleSlotNumber = route.stage == 0 ? 3 : 25;
-                    int protocolSlotIndex = visibleSlotNumber - 1;
-                    if (content.getItems() == null || protocolSlotIndex >= content.getItems().length) {
-                        emit(botId, "В меню нет слота №" + visibleSlotNumber + ". Остановил авто-выбор.", "error");
-                        route.stage = 2;
-                        return;
-                    }
-                    ItemStack clickedItem = content.getItems()[protocolSlotIndex];
-                    if (clickedItem == null) {
-                        emit(botId, "Слот №" + visibleSlotNumber + " пуст. Авто-выбор остановлен.", "error");
-                        route.stage = 2;
-                        return;
-                    }
-                    Map<Integer, ItemStack> changedSlots = new HashMap<>();
-                    changedSlots.put(protocolSlotIndex, null);
-                    current.send(new ServerboundContainerClickPacket(
-                            content.getContainerId(),
-                            content.getStateId(),
-                            protocolSlotIndex,
-                            ContainerActionType.CLICK_ITEM,
-                            ClickItemAction.LEFT_CLICK,
-                            clickedItem,
-                            changedSlots
-                    ));
-                    route.lastClickedContainerId = content.getContainerId();
-                    route.stage++;
-                    if (route.stage == 1) {
-                        emit(botId, "Нажал 3-й слот. Жду второе меню…", "menu");
-                    } else {
-                        emit(botId, "Нажал 25-й слот. Маршрут выбора отправлен.", "route-sent");
-                    }
-                }
-            }
-
-            @Override
-            public void disconnected(DisconnectedEvent event) {
-                sessions.remove(botId);
-                routes.remove(botId);
-                String reason = event.getReason() == null ? "Соединение закрыто" : event.getReason().toString();
-                emit(botId, reason, "disconnected");
-            }
-        });
-
+        // Keep all network/protocol initialization off Android's main UI thread.
         Thread connector = new Thread(() -> {
+            ClientSession session = null;
             try {
+                if (routes.get(botId) != route) return;
+                emit(botId, "Инициализирую протокол Minecraft 1.21.4…", "connecting");
+                MinecraftProtocol protocol = new MinecraftProtocol(nickname);
+
+                emit(botId, "Создаю сетевую сессию…", "connecting");
+                session = ClientNetworkSessionFactory.factory()
+                        .setRemoteSocketAddress(new InetSocketAddress(host, port))
+                        .setProtocol(protocol)
+                        .create();
+                if (routes.get(botId) != route) {
+                    session.disconnect(Component.text("Подключение отменено"));
+                    return;
+                }
+                sessions.put(botId, session);
+                final ClientSession activeSession = session;
+
+                activeSession.addListener(new SessionAdapter() {
+                    @Override
+                    public void packetReceived(Session current, Packet packet) {
+                        if (packet instanceof ClientboundLoginPacket && !route.joined) {
+                            route.joined = true;
+                            emit(botId, "Вошёл в игровой мир. Отправляю /lite…", "joined");
+                            current.send(new ServerboundChatCommandPacket("lite"));
+                        } else if (packet instanceof ClientboundOpenScreenPacket open) {
+                            route.openContainerId = open.getContainerId();
+                            emit(botId, "Открылось меню. Жду содержимое…", "menu");
+                        } else if (packet instanceof ClientboundContainerSetContentPacket content) {
+                            if (route.openContainerId != content.getContainerId() || route.lastClickedContainerId == content.getContainerId() || route.stage >= 2) return;
+                            int visibleSlotNumber = route.stage == 0 ? 3 : 25;
+                            int protocolSlotIndex = visibleSlotNumber - 1;
+                            if (content.getItems() == null || protocolSlotIndex >= content.getItems().length) {
+                                emit(botId, "В меню нет слота №" + visibleSlotNumber + ". Остановил авто-выбор.", "error");
+                                route.stage = 2;
+                                return;
+                            }
+                            ItemStack clickedItem = content.getItems()[protocolSlotIndex];
+                            if (clickedItem == null) {
+                                emit(botId, "Слот №" + visibleSlotNumber + " пуст. Авто-выбор остановлен.", "error");
+                                route.stage = 2;
+                                return;
+                            }
+                            Map<Integer, ItemStack> changedSlots = new HashMap<>();
+                            changedSlots.put(protocolSlotIndex, null);
+                            current.send(new ServerboundContainerClickPacket(
+                                    content.getContainerId(), content.getStateId(), protocolSlotIndex,
+                                    ContainerActionType.CLICK_ITEM, ClickItemAction.LEFT_CLICK,
+                                    clickedItem, changedSlots
+                            ));
+                            route.lastClickedContainerId = content.getContainerId();
+                            route.stage++;
+                            if (route.stage == 1) {
+                                emit(botId, "Нажал 3-й слот. Жду второе меню…", "menu");
+                            } else {
+                                emit(botId, "Нажал 25-й слот. Маршрут выбора отправлен.", "route-sent");
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void disconnected(DisconnectedEvent event) {
+                        sessions.remove(botId, activeSession);
+                        routes.remove(botId, route);
+                        String reason = event.getReason() == null ? "Соединение закрыто" : event.getReason().toString();
+                        emit(botId, "Сервер отключил бота: " + reason, "disconnected");
+                    }
+                });
+
                 emit(botId, "Соединяюсь с " + host + ":" + port + "…", "connecting");
-                session.connect(false);
-                if (!route.joined) {
-                    emit(botId, "Соединение создано. Жду подтверждение входа от сервера…", "connecting");
+                activeSession.connect(false);
+                if (!route.joined && routes.get(botId) == route) {
+                    emit(botId, "Сокет подключён. Ожидаю пакет входа от сервера…", "connecting");
                 }
             } catch (Exception e) {
-                sessions.remove(botId);
-                routes.remove(botId);
+                if (session != null) sessions.remove(botId, session);
+                routes.remove(botId, route);
                 String detail = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
                 emit(botId, "Ошибка подключения: " + detail, "error");
             }
         }, "masterme4a-connect-" + botId);
+        connector.setDaemon(true);
         connector.start();
 
+        // Watch setup as well as login, so a blocked initialization is reported too.
         Thread watchdog = new Thread(() -> {
             try {
                 TimeUnit.SECONDS.sleep(30);
-                if (sessions.get(botId) == session && !route.joined) {
-                    sessions.remove(botId, session);
+                if (routes.get(botId) == route && !route.joined) {
                     routes.remove(botId, route);
-                    try {
-                        session.disconnect(Component.text("Таймаут ожидания входа"));
-                    } catch (Exception ignored) { }
-                    emit(botId, "Таймаут: сервер не подтвердил вход за 30 секунд. Проверь адрес/порт и авторизацию: вход по нику доступен только на offline-mode.", "error");
+                    ClientSession pending = sessions.remove(botId);
+                    if (pending != null) {
+                        try { pending.disconnect(Component.text("Таймаут ожидания входа")); }
+                        catch (Exception ignored) { }
+                    }
+                    emit(botId, "Таймаут 30 секунд: соединение не завершило инициализацию/вход. Проверь адрес, порт и тип авторизации (offline-mode).", "error");
                 }
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();

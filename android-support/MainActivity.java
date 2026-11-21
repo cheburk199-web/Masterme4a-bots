@@ -8,6 +8,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 import io.flutter.embedding.android.FlutterActivity;
 import io.flutter.embedding.engine.FlutterEngine;
@@ -41,7 +42,7 @@ public class MainActivity extends FlutterActivity {
         int stage = 0;
         int openContainerId = -1;
         int lastClickedContainerId = -1;
-        boolean joined = false;
+        volatile boolean joined = false;
     }
 
     @Override
@@ -55,8 +56,10 @@ public class MainActivity extends FlutterActivity {
         if ("connectBot".equals(call.method)) {
             try {
                 int botId = ((Number) call.argument("botId")).intValue();
-                String nickname = String.valueOf(call.argument("nickname")).trim();
-                String host = String.valueOf(call.argument("host")).trim();
+                Object nicknameValue = call.argument("nickname");
+                String nickname = nicknameValue == null ? "" : nicknameValue.toString().trim();
+                Object hostValue = call.argument("host");
+                String host = hostValue == null ? "" : hostValue.toString().trim();
                 int port = ((Number) call.argument("port")).intValue();
                 connectBot(botId, nickname, host, port);
                 result.success(true);
@@ -84,7 +87,7 @@ public class MainActivity extends FlutterActivity {
             return;
         }
 
-        emit(botId, "Создаём игровое соединение 1.21.4…", "connecting");
+        emit(botId, "Подготавливаю соединение с сервером 1.21.4…", "connecting");
         BotRoute route = new BotRoute();
         routes.put(botId, route);
 
@@ -154,14 +157,37 @@ public class MainActivity extends FlutterActivity {
 
         Thread connector = new Thread(() -> {
             try {
+                emit(botId, "Соединяюсь с " + host + ":" + port + "…", "connecting");
                 session.connect(false);
+                if (!route.joined) {
+                    emit(botId, "Соединение создано. Жду подтверждение входа от сервера…", "connecting");
+                }
             } catch (Exception e) {
                 sessions.remove(botId);
                 routes.remove(botId);
-                emit(botId, "Ошибка подключения: " + e.getMessage(), "error");
+                String detail = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+                emit(botId, "Ошибка подключения: " + detail, "error");
             }
         }, "masterme4a-connect-" + botId);
         connector.start();
+
+        Thread watchdog = new Thread(() -> {
+            try {
+                TimeUnit.SECONDS.sleep(30);
+                if (sessions.get(botId) == session && !route.joined) {
+                    sessions.remove(botId, session);
+                    routes.remove(botId, route);
+                    try {
+                        session.disconnect(Component.text("Таймаут ожидания входа"));
+                    } catch (Exception ignored) { }
+                    emit(botId, "Таймаут: сервер не подтвердил вход за 30 секунд. Проверь адрес/порт и авторизацию: вход по нику доступен только на offline-mode.", "error");
+                }
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+        }, "masterme4a-watchdog-" + botId);
+        watchdog.setDaemon(true);
+        watchdog.start();
     }
 
     private void disconnectBot(int botId) {

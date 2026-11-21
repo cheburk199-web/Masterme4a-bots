@@ -17,15 +17,15 @@ if not root.exists():
 if not root.exists():
     raise SystemExit("Android root Gradle file not found")
 
-repo = "https://jitpack.io"
+repo = "https://repo.opencollab.dev/main/"
 root_text = root.read_text()
 if repo not in root_text:
     if root.name.endswith(".kts"):
-        repo_line = '        maven("https://jitpack.io")'
-        fallback = '\nallprojects {\n    repositories {\n        maven("https://repo.opencollab.dev/maven-releases/")\n    }\n}\n'
+        repo_line = '        maven("https://repo.opencollab.dev/main/")'
+        fallback = '\nallprojects {\n    repositories {\n        maven("https://repo.opencollab.dev/main/")\n    }\n}\n'
     else:
-        repo_line = "        maven { url 'https://jitpack.io' }"
-        fallback = "\nallprojects {\n    repositories {\n        maven { url 'https://repo.opencollab.dev/maven-releases/' }\n    }\n}\n"
+        repo_line = "        maven { url 'https://repo.opencollab.dev/main/' }"
+        fallback = "\nallprojects {\n    repositories {\n        maven { url 'https://repo.opencollab.dev/main/' }\n    }\n}\n"
     pattern = r"(allprojects\s*\{\s*repositories\s*\{)"
     root_text, count = re.subn(pattern, lambda match: match.group(1) + "\n" + repo_line, root_text, count=1)
     if count == 0:
@@ -33,7 +33,7 @@ if repo not in root_text:
     root.write_text(root_text)
 
 app_text = app.read_text()
-dependency = "com.github.GeyserMC:MCProtocolLib:1.21.4-1"
+dependency = "org.geysermc.mcprotocollib:protocol:1.21.4-1"
 if dependency not in app_text:
     if app.name.endswith(".kts"):
         app_text += '\ndependencies {\n    implementation("org.geysermc.mcprotocollib:protocol:1.21.4-1")\n}\n'

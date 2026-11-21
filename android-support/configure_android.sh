@@ -38,11 +38,10 @@ if settings.exists():
     settings_text = settings.read_text()
     open_collab = 'maven("https://repo.opencollab.dev/main/")'
     if open_collab not in settings_text:
-        marker = "repositories {"
-        if marker in settings_text:
-            settings_text = settings_text.replace(marker, marker + '\n        ' + open_collab, 1)
-        else:
-            settings_text += '\ndependencyResolutionManagement {\n    repositories {\n        ' + open_collab + '\n    }\n}\n'
+        pattern = r"(dependencyResolutionManagement\\s*\\{[\\s\\S]*?repositories\\s*\\{)"
+        settings_text, count = re.subn(pattern, lambda match: match.group(1) + "\\n        " + open_collab, settings_text, count=1)
+        if count == 0:
+            settings_text += '\\ndependencyResolutionManagement {\\n    repositories {\\n        ' + open_collab + '\\n    }\\n}\\n'
         settings.write_text(settings_text)
 
 app_text = app.read_text()

@@ -17,15 +17,15 @@ if not root.exists():
 if not root.exists():
     raise SystemExit("Android root Gradle file not found")
 
-repo = "https://repo.opencollab.dev/main/"
+repo = "https://jitpack.io"
 root_text = root.read_text()
 if repo not in root_text:
     if root.name.endswith(".kts"):
-        repo_line = '        maven("https://repo.opencollab.dev/main/")'
-        fallback = '\nallprojects {\n    repositories {\n        maven("https://repo.opencollab.dev/main/")\n    }\n}\n'
+        repo_line = '        maven("https://jitpack.io")'
+        fallback = '\nallprojects {\n    repositories {\n        maven("https://jitpack.io")\n    }\n}\n'
     else:
-        repo_line = "        maven { url 'https://repo.opencollab.dev/main/' }"
-        fallback = "\nallprojects {\n    repositories {\n        maven { url 'https://repo.opencollab.dev/main/' }\n    }\n}\n"
+        repo_line = "        maven { url 'https://jitpack.io' }"
+        fallback = "\nallprojects {\n    repositories {\n        maven { url 'https://jitpack.io' }\n    }\n}\n"
     pattern = r"(allprojects\s*\{\s*repositories\s*\{)"
     root_text, count = re.subn(pattern, lambda match: match.group(1) + "\n" + repo_line, root_text, count=1)
     if count == 0:
@@ -33,12 +33,12 @@ if repo not in root_text:
     root.write_text(root_text)
 
 app_text = app.read_text()
-dependency = "org.geysermc.mcprotocollib:protocol:1.21.4-1"
+dependency = "com.github.GeyserMC:MCProtocolLib:1.21.4-1"
 if dependency not in app_text:
     if app.name.endswith(".kts"):
-        app_text += '\ndependencies {\n    implementation("org.geysermc.mcprotocollib:protocol:1.21.4-1")\n}\n'
+        app_text += '\ndependencies {\n    implementation("com.github.GeyserMC:MCProtocolLib:1.21.4-1")\n}\n'
     else:
-        app_text += "\ndependencies {\n    implementation 'org.geysermc.mcprotocollib:protocol:1.21.4-1'\n}\n"
+        app_text += "\ndependencies {\n    implementation 'com.github.GeyserMC:MCProtocolLib:1.21.4-1'\n}\n"
     app.write_text(app_text)
 
 manifest = Path("android/app/src/main/AndroidManifest.xml")
@@ -55,7 +55,7 @@ if repo not in root.read_text():
 
 print("Gradle dependency:")
 for line in app.read_text().splitlines():
-    if "org.geysermc.mcprotocollib:protocol" in line:
+    if "com.github.GeyserMC:MCProtocolLib" in line:
         print(line)
 print("Maven repository:")
 for line in root.read_text().splitlines():

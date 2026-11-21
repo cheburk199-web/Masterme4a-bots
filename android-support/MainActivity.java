@@ -23,6 +23,7 @@ import org.geysermc.mcprotocollib.network.factory.ClientNetworkSessionFactory;
 import org.geysermc.mcprotocollib.network.packet.Packet;
 import org.geysermc.mcprotocollib.protocol.MinecraftProtocol;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundLoginPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundSystemChatPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundOpenScreenPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundContainerSetContentPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundChatCommandPacket;
@@ -65,6 +66,16 @@ public class MainActivity extends FlutterActivity {
                 result.success(true);
             } catch (Exception e) {
                 result.error("CONNECT_ARGUMENTS", e.getMessage(), null);
+            }
+        } else if ("sendCommand".equals(call.method)) {
+            try {
+                int botId = ((Number) call.argument("botId")).intValue();
+                Object commandValue = call.argument("command");
+                String command = commandValue == null ? "" : commandValue.toString();
+                sendCommand(botId, command);
+                result.success(true);
+            } catch (Exception e) {
+                result.error("SEND_COMMAND", e.getMessage(), null);
             }
         } else if ("disconnectBot".equals(call.method)) {
             int botId = ((Number) call.argument("botId")).intValue();
@@ -118,6 +129,8 @@ public class MainActivity extends FlutterActivity {
                             route.joined = true;
                             emit(botId, "Вошёл в игровой мир. Отправляю /lite…", "joined");
                             current.send(new ServerboundChatCommandPacket("lite"));
+                        } else if (packet instanceof ClientboundSystemChatPacket chat) {
+                            emitEvent(botId, "Чат сервера: " + chat.getContent().toString(), "chat");
                         } else if (packet instanceof ClientboundOpenScreenPacket open) {
                             route.openContainerId = open.getContainerId();
                             emit(botId, "Открылось меню. Жду содержимое…", "menu");
@@ -198,6 +211,22 @@ public class MainActivity extends FlutterActivity {
         watchdog.start();
     }
 
+    private void sendCommand(int botId, String rawCommand) {
+        ClientSession session = sessions.get(botId);
+        BotRoute route = routes.get(botId);
+        if (session == null || route == null || !route.joined) {
+            throw new IllegalStateException("Сначала подключи бота и дождись входа в мир");
+        }
+        String command = rawCommand == null ? "" : rawCommand.trim();
+        if (command.startsWith("/")) command = command.substring(1);
+        if (command.isEmpty()) throw new IllegalArgumentException("Введи команду");
+        if (command.length() > 256 || command.contains("\n") || command.contains("\r")) {
+            throw new IllegalArgumentException("Команда слишком длинная или содержит перенос строки");
+        }
+        session.send(new ServerboundChatCommandPacket(command));
+        emitEvent(botId, "Команда отправлена: /" + command, "command");
+    }
+
     private void disconnectBot(int botId) {
         ClientSession session = sessions.remove(botId);
         routes.remove(botId);
@@ -217,6 +246,19 @@ public class MainActivity extends FlutterActivity {
                 payload.put("message", message);
                 payload.put("status", status);
                 channel.invokeMethod("botStatus", payload);
+                channel.invokeMethod("botEvent", payload);
+            }
+        });
+    }
+
+    private void emitEvent(int botId, String message, String status) {
+        mainHandler.post(() -> {
+            if (channel != null) {
+                java.util.HashMap<String, Object> payload = new java.util.HashMap<>();
+                payload.put("botId", botId);
+                payload.put("message", message);
+                payload.put("status", status);
+                channel.invokeMethod("botEvent", payload);
             }
         });
     }

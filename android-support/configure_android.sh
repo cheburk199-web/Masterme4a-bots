@@ -32,7 +32,19 @@ if repo not in root_text:
         root_text += fallback
     root.write_text(root_text)
 
-app_text = app.read_text()
+
+settings = Path("android/settings.gradle.kts")
+if settings.exists():
+    settings_text = settings.read_text()
+    open_collab = 'maven("https://repo.opencollab.dev/main/")'
+    if open_collab not in settings_text:
+        marker = "repositories {"
+        if marker in settings_text:
+            settings_text = settings_text.replace(marker, marker + '\\n        ' + open_collab, 1)
+        else:
+            settings_text += '\\ndependencyResolutionManagement {\\n    repositories {\\n        ' + open_collab + '\\n    }\\n}\\n'
+        settings.write_text(settings_text)
+\napp_text = app.read_text()
 dependency = "com.github.GeyserMC:MCProtocolLib:1.21.4-1"
 if dependency not in app_text:
     if app.name.endswith(".kts"):
@@ -57,7 +69,7 @@ print("Gradle dependency:")
 for line in app.read_text().splitlines():
     if "com.github.GeyserMC:MCProtocolLib" in line:
         print(line)
-print("Maven repository:")
+print("Maven repository:")\nprint("OpenCollab repository configured in settings.gradle.kts:", Path("android/settings.gradle.kts").exists() and "repo.opencollab.dev/main" in Path("android/settings.gradle.kts").read_text())
 for line in root.read_text().splitlines():
     if "jitpack.io" in line:
         print(line)

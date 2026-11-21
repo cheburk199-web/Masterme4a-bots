@@ -192,7 +192,12 @@ class _DashboardState extends State<Dashboard> {
         if (id != null && id >= 0 && id < botChunkNotifiers.length) {
           final key = '${data['chunkX']},${data['chunkZ']}';
           final chunks = Map<String, dynamic>.from(botChunkNotifiers[id].value);
+          // Keep a bounded live window; each chunk now also carries sparse 3D sections.
+          chunks.remove(key);
           chunks[key] = data;
+          while (chunks.length > 64) {
+            chunks.remove(chunks.keys.first);
+          }
           botChunkNotifiers[id].value = chunks;
         }
       } else if (call.method == 'botInventory' && mounted) {

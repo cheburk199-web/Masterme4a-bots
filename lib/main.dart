@@ -15,6 +15,7 @@ const holyWorldFirstMenuSlot = 3;
 const holyWorldTrioLiteSlot = 25;
 final List<ValueNotifier<Map<String, dynamic>>> botWorldNotifiers = List.generate(5, (_) =>
   ValueNotifier<Map<String, dynamic>>({'joined': false, 'hasPosition': false, 'x': 0.0, 'y': 0.0, 'z': 0.0, 'yaw': 0.0, 'pitch': 0.0, 'loadedChunks': 0, 'chunkDataBytes': 0, 'blockUpdates': 0, 'lastChunkX': 0, 'lastChunkZ': 0}));
+final List<ValueNotifier<Map<String, dynamic>>> botChunkNotifiers = List.generate(5, (_) => ValueNotifier<Map<String, dynamic>>({}));
 
 enum ConnectionMode { microsoft, nickname }
 
@@ -184,6 +185,15 @@ class _DashboardState extends State<Dashboard> {
         final data = Map<String, dynamic>.from(call.arguments as Map);
         final id = data['botId'] as int?;
         if (id != null && id >= 0 && id < botWorldNotifiers.length) botWorldNotifiers[id].value = data;
+      } else if (call.method == 'botChunk' && mounted) {
+        final data = Map<String, dynamic>.from(call.arguments as Map);
+        final id = data['botId'] as int?;
+        if (id != null && id >= 0 && id < botChunkNotifiers.length) {
+          final key = '${data['chunkX']},${data['chunkZ']}';
+          final chunks = Map<String, dynamic>.from(botChunkNotifiers[id].value);
+          chunks[key] = data;
+          botChunkNotifiers[id].value = chunks;
+        }
       } else if (call.method == 'botStatus' && mounted) {
         final data = Map<String, dynamic>.from(call.arguments as Map);
         final id = data['botId'] as int?;
@@ -674,40 +684,38 @@ class _LiveWorldScreenState extends State<LiveWorldScreen> {
         final y = (w['y'] as num? ?? 0).toDouble();
         final z = (w['z'] as num? ?? 0).toDouble();
         return Column(children: [
-          Expanded(child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onPanStart: (e) {
-              _looking = true;
-              _startX = e.localPosition.dx; _startY = e.localPosition.dy;
-              _baseYaw = (w['yaw'] as num? ?? 0).toDouble();
-              _basePitch = (w['pitch'] as num? ?? 0).toDouble();
-            },
-            onPanUpdate: (e) {
-              if (!_looking) return;
-              final yaw = _baseYaw + (e.localPosition.dx - _startX) * 0.35;
-              final pitch = (_basePitch - (e.localPosition.dy - _startY) * 0.25).clamp(-90.0, 90.0);
-              _channel.invokeMethod<bool>('lookBot', {'botId': widget.botId, 'yaw': yaw, 'pitch': pitch}).catchError((_) {});
-            },
-            onPanEnd: (_) => _looking = false,
-            child: Container(
-              width: double.infinity, margin: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: const Color(0xFF15111E), borderRadius: BorderRadius.circular(18), border: Border.all(color: purple.withOpacity(.55))),
-              child: Stack(children: [
-                Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(connected ? Icons.visibility : Icons.visibility_off, color: purple, size: 40),
-                  const SizedBox(height: 10),
-                  Text(connected ? 'БОТ В МИРЕ' : 'НЕТ ПОДКЛЮЧЕНИЯ', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Text('X ${x.toStringAsFixed(1)}  Y ${y.toStringAsFixed(1)}  Z ${z.toStringAsFixed(1)}', style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                  const SizedBox(height: 12),
-                  const Text('Свайп — поворот взгляда бота', style: TextStyle(color: Colors.white54, fontSize: 12)),
-                ])),
-                const Center(child: IgnorePointer(child: Text('+', style: TextStyle(color: Colors.white70, fontSize: 24)))),
-                Positioned(left: 12, top: 12, child: Text('CHUNKS: ${w['loadedChunks'] ?? 0}', style: const TextStyle(color: purple, fontSize: 11))),
-                Positioned(right: 12, top: 12, child: Text('LIVE', style: TextStyle(color: connected ? Colors.greenAccent : Colors.redAccent, fontWeight: FontWeight.bold))),
-              ]),
+          Expanded(child: ValueListenableBuilder<Map<String, dynamic>>(
+            valueListenable: botChunkNotifiers[widget.botId],
+            builder: (context, chunks, __) => GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanStart: (e) {
+                _looking = true;
+                _startX = e.localPosition.dx; _startY = e.localPosition.dy;
+                _baseYaw = (w['yaw'] as num? ?? 0).toDouble();
+                _basePitch = (w['pitch'] as num? ?? 0).toDouble();
+              },
+              onPanUpdate: (e) {
+                if (!_looking) return;
+                final yaw = _baseYaw + (e.localPosition.dx - _startX) * 0.35;
+                final pitch = (_basePitch - (e.localPosition.dy - _startY) * 0.25).clamp(-90.0, 90.0);
+                _channel.invokeMethod<bool>('lookBot', {'botId': widget.botId, 'yaw': yaw, 'pitch': pitch}).catchError((_) {});
+              },
+              onPanEnd: (_) => _looking = false,
+              child: Container(
+                width: double.infinity, margin: const EdgeInsets.all(12),
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(color: const Color(0xFF15111E), borderRadius: BorderRadius.circular(18), border: Border.all(color: purple.withOpacity(.55))),
+                child: Stack(children: [
+                  Positioned.fill(child: CustomPaint(painter: _LiveChunkMapPainter(chunks: chunks, playerX: x, playerZ: z))),
+                  const Center(child: IgnorePointer(child: Text('+', style: TextStyle(color: Colors.white, fontSize: 24, shadows: [Shadow(color: Colors.black, blurRadius: 5)])))),
+                  Positioned(left: 12, top: 12, child: Text('CHUNKS: ${w['loadedChunks'] ?? 0}', style: const TextStyle(color: purple, fontSize: 11))),
+                  Positioned(right: 12, top: 12, child: Text('LIVE MAP', style: TextStyle(color: connected ? Colors.greenAccent : Colors.redAccent, fontWeight: FontWeight.bold))),
+                  Positioned(left: 12, bottom: 12, child: Text(chunks.isEmpty ? 'Жду данные блоков…' : 'Реальные блоки • вид сверху', style: const TextStyle(color: Colors.white70, fontSize: 11))),
+                ]),
+              ),
             ),
           )),
+
           Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 12), child: Column(children: [
             Text(_message, style: const TextStyle(color: Colors.white54, fontSize: 11)),
             const SizedBox(height: 8),
@@ -737,6 +745,68 @@ class _LiveWorldScreenState extends State<LiveWorldScreen> {
     child: Container(width: 52, height: 58, decoration: BoxDecoration(color: panel, borderRadius: BorderRadius.circular(12), border: Border.all(color: purple.withOpacity(.4))),
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(icon, color: purple, size: 28), Text(label, style: const TextStyle(fontSize: 9, color: Colors.white70))])),
   );
+}
+
+
+/// Top-down live chunk visualization using actual block state IDs from the server.
+/// Textures are not mapped yet; height and block distribution are live.
+class _LiveChunkMapPainter extends CustomPainter {
+  _LiveChunkMapPainter({required this.chunks, required this.playerX, required this.playerZ});
+  final Map<String, dynamic> chunks;
+  final double playerX;
+  final double playerZ;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(Offset.zero & size, Paint()..color = const Color(0xFF171322));
+    if (chunks.isEmpty || size.isEmpty) {
+      final p = TextPainter(text: const TextSpan(text: 'Данные чанков появятся после входа', style: TextStyle(color: Colors.white54, fontSize: 13)), textDirection: TextDirection.ltr);
+      p.layout(maxWidth: size.width - 20);
+      p.paint(canvas, Offset((size.width - p.width) / 2, size.height / 2));
+      return;
+    }
+    final scale = math.min(size.width, size.height) / 112.0;
+    final center = Offset(size.width / 2, size.height / 2);
+    final playerChunkX = (playerX / 16).floor();
+    final playerChunkZ = (playerZ / 16).floor();
+    final paint = Paint()..style = PaintingStyle.fill;
+    for (final entry in chunks.entries) {
+      final parts = entry.key.split(',');
+      if (parts.length != 2) continue;
+      final cx = int.tryParse(parts[0]); final cz = int.tryParse(parts[1]);
+      if (cx == null || cz == null || (cx - playerChunkX).abs() > 4 || (cz - playerChunkZ).abs() > 4) continue;
+      final data = Map<String, dynamic>.from(entry.value as Map);
+      final states = (data['states'] as List?)?.cast<num>();
+      final heights = (data['heights'] as List?)?.cast<num>();
+      if (states == null || states.length < 256) continue;
+      for (var z = 0; z < 16; z++) {
+        for (var x = 0; x < 16; x++) {
+          final idx = z * 16 + x;
+          final state = states[idx].toInt();
+          if (state == 0) continue;
+          final worldX = cx * 16 + x;
+          final worldZ = cz * 16 + z;
+          final dx = worldX - playerX;
+          final dz = worldZ - playerZ;
+          final px = center.dx + dx * scale;
+          final py = center.dy + dz * scale;
+          final height = heights != null && heights.length > idx ? heights[idx].toInt() : 0;
+          final hue = (state * 47 + 95) % 360;
+          final saturation = 0.35 + (state % 4) * 0.08;
+          final light = (0.35 + ((height + 64).clamp(0, 320) / 320) * 0.32).clamp(0.25, 0.72);
+          paint.color = HSLColor.fromAHSL(1, hue.toDouble(), saturation, light).toColor();
+          canvas.drawRect(Rect.fromLTWH(px, py, scale * 0.96, scale * 0.96), paint);
+        }
+      }
+    }
+    // Mark the bot's current location and facing direction.
+    final marker = Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = 2;
+    canvas.drawCircle(center, scale * 1.2, marker);
+    canvas.drawLine(center, center + const Offset(0, -1) * scale * 2.5, marker);
+  }
+
+  @override
+  bool shouldRepaint(covariant _LiveChunkMapPainter old) => old.chunks != chunks || old.playerX != playerX || old.playerZ != playerZ;
 }
 
 /// First-person Minecraft-inspired voxel demo.

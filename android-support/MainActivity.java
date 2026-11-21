@@ -34,6 +34,8 @@ import org.geysermc.mcprotocollib.protocol.data.game.entity.player.PositionEleme
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundOpenScreenPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.ClientboundContainerSetContentPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundChatCommandPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.player.ServerboundMovePlayerPosRotPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.level.ServerboundPlayerInputPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.inventory.ServerboundContainerClickPacket;
 import org.geysermc.mcprotocollib.protocol.data.game.inventory.ContainerActionType;
 import org.geysermc.mcprotocollib.protocol.data.game.inventory.ClickItemAction;
@@ -91,6 +93,29 @@ public class MainActivity extends FlutterActivity {
                 result.success(true);
             } catch (Exception e) {
                 result.error("SEND_COMMAND", e.getMessage(), null);
+            }
+        } else if ("moveBot".equals(call.method)) {
+            try {
+                int botId = ((Number) call.argument("botId")).intValue();
+                double forward = call.argument("forward") == null ? 0.0 : ((Number) call.argument("forward")).doubleValue();
+                double strafe = call.argument("strafe") == null ? 0.0 : ((Number) call.argument("strafe")).doubleValue();
+                boolean jump = Boolean.TRUE.equals(call.argument("jump"));
+                boolean shift = Boolean.TRUE.equals(call.argument("shift"));
+                boolean sprint = Boolean.TRUE.equals(call.argument("sprint"));
+                moveBot(botId, forward, strafe, jump, shift, sprint);
+                result.success(true);
+            } catch (Exception e) {
+                result.error("MOVE_BOT", e.getMessage(), null);
+            }
+        } else if ("lookBot".equals(call.method)) {
+            try {
+                int botId = ((Number) call.argument("botId")).intValue();
+                float yaw = ((Number) call.argument("yaw")).floatValue();
+                float pitch = ((Number) call.argument("pitch")).floatValue();
+                lookBot(botId, yaw, pitch);
+                result.success(true);
+            } catch (Exception e) {
+                result.error("LOOK_BOT", e.getMessage(), null);
             }
         } else if ("disconnectBot".equals(call.method)) {
             int botId = ((Number) call.argument("botId")).intValue();
@@ -247,6 +272,45 @@ public class MainActivity extends FlutterActivity {
         }, "masterme4a-watchdog-" + botId);
         watchdog.setDaemon(true);
         watchdog.start();
+    }
+
+    private BotRoute requireMovableRoute(int botId) {
+        ClientSession session = sessions.get(botId);
+        BotRoute route = routes.get(botId);
+        if (session == null || route == null || !route.joined || !route.hasPosition) {
+            throw new IllegalStateException("Сначала подключи бота и дождись позиции в мире");
+        }
+        return route;
+    }
+
+    // Remote movement prototype: small client position steps; server remains authoritative.
+    private void moveBot(int botId, double forward, double strafe, boolean jump, boolean shift, boolean sprint) {
+        ClientSession session = sessions.get(botId);
+        BotRoute route = requireMovableRoute(botId);
+        forward = Math.max(-1.0, Math.min(1.0, forward));
+        strafe = Math.max(-1.0, Math.min(1.0, strafe));
+        double yawRad = Math.toRadians(route.playerYaw);
+        double speed = sprint ? 0.42 : (shift ? 0.08 : 0.22);
+        double dx = (-Math.sin(yawRad) * forward + Math.cos(yawRad) * strafe) * speed;
+        double dz = (-Math.cos(yawRad) * forward - Math.sin(yawRad) * strafe) * speed;
+        double dy = jump ? 0.42 : 0.0;
+        route.playerX += dx;
+        route.playerY += dy;
+        route.playerZ += dz;
+        session.send(new ServerboundPlayerInputPacket(forward > 0, forward < 0, strafe < 0, strafe > 0, jump, shift, sprint));
+        session.send(new ServerboundMovePlayerPosRotPacket(true, false,
+                route.playerX, route.playerY, route.playerZ, route.playerYaw, route.playerPitch));
+        emitWorld(botId, route);
+    }
+
+    private void lookBot(int botId, float yaw, float pitch) {
+        ClientSession session = sessions.get(botId);
+        BotRoute route = requireMovableRoute(botId);
+        route.playerYaw = yaw;
+        route.playerPitch = Math.max(-90.0f, Math.min(90.0f, pitch));
+        session.send(new ServerboundMovePlayerPosRotPacket(true, false,
+                route.playerX, route.playerY, route.playerZ, route.playerYaw, route.playerPitch));
+        emitWorld(botId, route);
     }
 
     private void sendCommand(int botId, String rawCommand) {

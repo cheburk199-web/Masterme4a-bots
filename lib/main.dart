@@ -744,11 +744,19 @@ class _LiveWorldScreenState extends State<LiveWorldScreen> {
                 clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(color: const Color(0xFF15111E), borderRadius: BorderRadius.circular(18), border: Border.all(color: purple.withOpacity(.55))),
                 child: Stack(children: [
-                  Positioned.fill(child: CustomPaint(painter: _LiveChunkMapPainter(chunks: chunks, playerX: x, playerZ: z))),
-                  const Center(child: IgnorePointer(child: Text('+', style: TextStyle(color: Colors.white, fontSize: 24, shadows: [Shadow(color: Colors.black, blurRadius: 5)])))),
-                  Positioned(left: 12, top: 12, child: Text('CHUNKS: ${w['loadedChunks'] ?? 0}', style: const TextStyle(color: purple, fontSize: 11))),
-                  Positioned(right: 12, top: 12, child: Text('LIVE MAP', style: TextStyle(color: connected ? Colors.greenAccent : Colors.redAccent, fontWeight: FontWeight.bold))),
-                  Positioned(left: 12, bottom: 12, child: Text(chunks.isEmpty ? 'Жду данные блоков…' : 'Реальные блоки • вид сверху', style: const TextStyle(color: Colors.white70, fontSize: 11))),
+                  Positioned.fill(child: CustomPaint(painter: _LiveFirstPersonPainter(
+                    chunks: chunks, playerX: x, playerY: y, playerZ: z,
+                    yaw: (w['yaw'] as num? ?? 0).toDouble(),
+                    pitch: (w['pitch'] as num? ?? 0).toDouble(),
+                  ))),
+                  const Center(child: IgnorePointer(child: Text('+', style: TextStyle(color: Colors.white, fontSize: 19, shadows: [Shadow(color: Colors.black, blurRadius: 5)])))),
+                  Positioned(left: 12, top: 12, child: Text('BOT ${widget.botId + 1} • ${w['loadedChunks'] ?? 0} CHUNKS', style: const TextStyle(color: purple, fontSize: 11))),
+                  Positioned(right: 12, top: 12, child: Text('FIRST PERSON', style: TextStyle(color: connected ? Colors.greenAccent : Colors.redAccent, fontWeight: FontWeight.bold))),
+                  Positioned(left: 0, right: 0, bottom: 10, child: IgnorePointer(child: Center(child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(color: Colors.black.withOpacity(.42), borderRadius: BorderRadius.circular(8)),
+                    child: const Text('LIVE WORLD • WASD / СМОТРИ ПЕРЕТАСКИВАНИЕМ', style: TextStyle(color: Colors.white70, fontSize: 9)),
+                  )))),
                 ]),
               ),
             ),
@@ -769,7 +777,7 @@ class _LiveWorldScreenState extends State<LiveWorldScreen> {
               const SizedBox(width: 10),
               OutlinedButton.icon(onPressed: () => _step(1, 0, sprint: true), icon: const Icon(Icons.directions_run), label: const Text('Бег')),
             ]),
-            const Text('Пакеты движения отправляются серверу. 3D-блоки ещё не отображаются.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white38, fontSize: 10)),
+            const Text('Управление ботом • перетащи экран, чтобы повернуть камеру', textAlign: TextAlign.center, style: TextStyle(color: Colors.white38, fontSize: 10)),
           ])),
         ]);
       },
@@ -996,6 +1004,127 @@ class InventorySlotTile extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Live first-person voxel raycaster. It renders the actual sparse 3D block-state
+/// data received for this bot; colors are provisional until the 1.21.4 texture atlas
+/// and block-model registry are bundled with the app.
+class _LiveFirstPersonPainter extends CustomPainter {
+  _LiveFirstPersonPainter({required this.chunks, required this.playerX, required this.playerY,
+    required this.playerZ, required this.yaw, required this.pitch});
+  final Map<String, dynamic> chunks;
+  final double playerX, playerY, playerZ, yaw, pitch;
+
+  Color _blockColor(int state, double shade) {
+    final hue = ((state * 47 + 95) % 360).toDouble();
+    final sat = 0.38 + (state % 5) * 0.045;
+    final light = (0.42 + (state % 7) * 0.018) * shade;
+    return HSLColor.fromAHSL(1, hue, sat, light.clamp(0.12, 0.78)).toColor();
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final sky = Paint()..shader = const LinearGradient(
+      begin: Alignment.topCenter, end: Alignment.bottomCenter,
+      colors: [Color(0xFF527FA8), Color(0xFFB5C9D8), Color(0xFF59606A)],
+      stops: [0, .62, 1],
+    ).createShader(Offset.zero & size);
+    canvas.drawRect(Offset.zero & size, sky);
+    if (chunks.isEmpty) {
+      final p = TextPainter(text: const TextSpan(text: 'Ожидаю 3D-чанки от сервера…',
+        style: TextStyle(color: Colors.white, fontSize: 13, shadows: [Shadow(color: Colors.black, blurRadius: 4)])),
+        textDirection: TextDirection.ltr)..layout(maxWidth: size.width - 20);
+      p.paint(canvas, Offset((size.width-p.width)/2, size.height*.72));
+      return;
+    }
+
+    // Build sparse lookup only from chunks near the current player.
+    final voxels = <String, Map<int, int>>{};
+    final pcx = (playerX / 16).floor(), pcz = (playerZ / 16).floor();
+    for (final entry in chunks.entries) {
+      final c = entry.key.split(',');
+      if (c.length != 2) continue;
+      final cx = int.tryParse(c[0]), cz = int.tryParse(c[1]);
+      if (cx == null || cz == null || (cx-pcx).abs()>3 || (cz-pcz).abs()>3) continue;
+      final data = Map<String, dynamic>.from(entry.value as Map);
+      final sections = data['sections'] as List?;
+      if (sections == null) continue;
+      for (final raw in sections) {
+        final sec = Map<String, dynamic>.from(raw as Map);
+        final sy = (sec['sectionY'] as num?)?.toInt() ?? 0;
+        final indexes = sec['indices'] as List? ?? const [];
+        final states = sec['states'] as List? ?? const [];
+        final count = math.min(indexes.length, states.length);
+        if (count == 0) continue;
+        final vox = <int, int>{};
+        for (var i=0; i<count; i++) {
+          final id = (states[i] as num).toInt();
+          if (id != 0) vox[(indexes[i] as num).toInt()] = id;
+        }
+        voxels['$cx,$cz,$sy'] = vox;
+      }
+    }
+
+    const rw = 120, rh = 68;
+    final pixelW = size.width / rw, pixelH = size.height / rh;
+    final yawR = yaw * math.pi / 180, pitchR = pitch * math.pi / 180;
+    final syaw = math.sin(yawR), cyaw = math.cos(yawR);
+    final sp = math.sin(pitchR), cp = math.cos(pitchR);
+    final forward = <double>[-syaw*cp, -sp, cyaw*cp];
+    final right = <double>[cyaw, 0, syaw];
+    final up = <double>[syaw*sp, cp, -cyaw*sp];
+    final eyeX = playerX, eyeY = playerY + 1.62, eyeZ = playerZ;
+    final fov = math.tan(70 * math.pi / 360);
+    final rectPaint = Paint()..style = PaintingStyle.fill;
+
+    for (var py=0; py<rh; py++) {
+      final ny = (1 - 2*(py+.5)/rh) * fov * (rh/rw);
+      for (var px=0; px<rw; px++) {
+        final nx = (2*(px+.5)/rw - 1) * fov;
+        var dx = forward[0] + right[0]*nx + up[0]*ny;
+        var dy = forward[1] + right[1]*nx + up[1]*ny;
+        var dz = forward[2] + right[2]*nx + up[2]*ny;
+        final len = math.sqrt(dx*dx+dy*dy+dz*dz);
+        dx/=len; dy/=len; dz/=len;
+        Color color = Color.lerp(const Color(0xFF9CB9CF), const Color(0xFF384451), (py/rh).clamp(0.0,1.0))!;
+        var distance = .18;
+        while (distance < 58) {
+          final wx = (eyeX + dx*distance).floor();
+          final wy = (eyeY + dy*distance).floor();
+          final wz = (eyeZ + dz*distance).floor();
+          final cx = (wx/16).floor(), cz = (wz/16).floor();
+          final lx = wx-cx*16, lz = wz-cz*16;
+          final sectionY = (wy/16).floor(), ly = wy-sectionY*16;
+          final section = voxels['$cx,$cz,$sectionY'];
+          final state = section?[(ly*256)+(lz*16)+lx];
+          if (state != null) {
+            final shade = (1.0 - distance/100) * (dy.abs() > .72 ? 1.12 : (dx.abs() > .72 ? .82 : 1.0));
+            color = _blockColor(state, shade);
+            break;
+          }
+          distance += .22;
+        }
+        rectPaint.color = color;
+        canvas.drawRect(Rect.fromLTWH(px*pixelW, py*pixelH, pixelW+.35, pixelH+.35), rectPaint);
+      }
+    }
+    // Simple Minecraft-style hotbar overlay.
+    final barW = math.min(size.width*.58, 270.0), slot = barW/9;
+    final barLeft = (size.width-barW)/2, barTop = size.height-34;
+    final barPaint = Paint()..color = const Color(0xB91A1720);
+    canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(barLeft-4,barTop-4,barW+8,30),const Radius.circular(5)),barPaint);
+    final border = Paint()..color = const Color(0xCCFFFFFF)..style=PaintingStyle.stroke..strokeWidth=1.2;
+    for(var i=0;i<9;i++){
+      canvas.drawRect(Rect.fromLTWH(barLeft+i*slot,barTop,slot,22),Paint()..color=Color.fromARGB(55,255,255,255));
+      if(i==0) canvas.drawRect(Rect.fromLTWH(barLeft+i*slot-1,barTop-1,slot+2,24),border);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _LiveFirstPersonPainter old) =>
+    old.chunks != chunks || old.playerX != playerX || old.playerY != playerY ||
+    old.playerZ != playerZ || old.yaw != yaw || old.pitch != pitch;
 }
 
 /// Top-down live chunk visualization using actual block state IDs from the server.

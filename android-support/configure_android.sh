@@ -66,6 +66,15 @@ if dependency not in app_text:
         app_text += "\ndependencies {\n    implementation('com.github.GeyserMC:MCProtocolLib:1.21.4-1') {\n        exclude group: 'org.cloudburstmc.math', module: 'api'\n    }\n}\n"
     app.write_text(app_text)
 
+# Netty libraries bundle the same INDEX.LIST resource; exclude the duplicate
+# from the Android APK merge step (Kotlin or Groovy Gradle syntax).
+if "META-INF/INDEX.LIST" not in app_text:
+    if app.name.endswith(".kts"):
+        app_text += '\\nandroid {\\n    packaging {\\n        resources {\\n            excludes += "META-INF/INDEX.LIST"\\n        }\\n    }\\n}\\n'
+    else:
+        app_text += "\\nandroid {\\n    packagingOptions {\\n        exclude 'META-INF/INDEX.LIST'\\n    }\\n}\\n"
+    app.write_text(app_text)
+
 manifest = Path("android/app/src/main/AndroidManifest.xml")
 manifest_text = manifest.read_text()
 permission = '    <uses-permission android:name="android.permission.INTERNET" />'

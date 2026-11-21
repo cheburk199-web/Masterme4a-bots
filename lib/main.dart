@@ -1044,9 +1044,9 @@ class _LiveTexturedFirstPersonView extends StatefulWidget {
 }
 
 class _LiveTexturedFirstPersonViewState extends State<_LiveTexturedFirstPersonView> {
-  Map<int, String> _paths = {};
-  final Map<int, _TexturePixels> _textures = {};
-  final Set<int> _loading = {};
+  Map<int, Map<String, String>> _facePaths = {};
+  final Map<String, _TexturePixels> _textures = {};
+  final Set<String> _loading = {};
   bool _lookupLoaded = false;
 
   @override
@@ -1066,10 +1066,10 @@ class _LiveTexturedFirstPersonViewState extends State<_LiveTexturedFirstPersonVi
 
   Future<void> _loadLookup() async {
     try {
-      final raw = await rootBundle.loadString('assets/minecraft/state_texture_lookup.json');
+      final raw = await rootBundle.loadString('assets/minecraft/state_face_texture_lookup.json');
       final json = jsonDecode(raw) as Map<String, dynamic>;
       final states = Map<String, dynamic>.from(json['states'] as Map);
-      _paths = {for (final e in states.entries) int.parse(e.key): e.value.toString()};
+      _facePaths = {for (final e in states.entries) int.parse(e.key): Map<String, String>.from(e.value as Map)};
       _lookupLoaded = true;
       await _loadVisibleTextures();
     } catch (_) {
@@ -1079,7 +1079,7 @@ class _LiveTexturedFirstPersonViewState extends State<_LiveTexturedFirstPersonVi
 
   Future<void> _loadVisibleTextures() async {
     if (!_lookupLoaded) return;
-    final wanted = <int>{};
+    final wanted = <String>{};
     final pcx = (widget.playerX / 16).floor();
     final pcz = (widget.playerZ / 16).floor();
     for (final entry in widget.chunks.entries) {
@@ -1092,24 +1092,24 @@ class _LiveTexturedFirstPersonViewState extends State<_LiveTexturedFirstPersonVi
         final section = Map<String, dynamic>.from(sectionRaw as Map);
         for (final raw in (section['states'] as List? ?? const [])) {
           final id = (raw as num).toInt();
-          if (id != 0 && _paths.containsKey(id) && !_textures.containsKey(id)) wanted.add(id);
+          for (final path in (_facePaths[id]?.values.toSet() ?? <String>{})) { if (!_textures.containsKey(path)) wanted.add(path); }
         }
       }
     }
-    for (final id in wanted.take(220)) {
-      if (!_loading.add(id)) continue;
-      _decodeTexture(id);
+    for (final path in wanted.take(480)) {
+      if (!_loading.add(path)) continue;
+      _decodeTexture(path);
     }
   }
 
-  Future<void> _decodeTexture(int id) async {
+  Future<void> _decodeTexture(String path) async {
     try {
-      final data = await rootBundle.load('assets/minecraft/${_paths[id]}');
+      final data = await rootBundle.load('assets/minecraft/$path');
       final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
       final frame = await codec.getNextFrame();
       final bytes = await frame.image.toByteData(format: ui.ImageByteFormat.rawRgba);
       if (bytes != null && mounted) {
-        _textures[id] = _TexturePixels(frame.image.width, frame.image.height, bytes.buffer.asUint8List());
+        _textures[path] = _TexturePixels(frame.image.width, frame.image.height, bytes.buffer.asUint8List());
         setState(() {});
       }
       frame.image.dispose();
@@ -1117,7 +1117,7 @@ class _LiveTexturedFirstPersonViewState extends State<_LiveTexturedFirstPersonVi
     } catch (_) {
       // Keep the fallback block shading if a resource-pack texture is unavailable.
     } finally {
-      _loading.remove(id);
+      _loading.remove(path);
     }
   }
 
@@ -1126,7 +1126,7 @@ class _LiveTexturedFirstPersonViewState extends State<_LiveTexturedFirstPersonVi
     painter: _LiveFirstPersonPainter(
       chunks: widget.chunks, playerX: widget.playerX, playerY: widget.playerY,
       playerZ: widget.playerZ, yaw: widget.yaw, pitch: widget.pitch,
-      textures: _textures,
+      textures: _textures, facePaths: _facePaths,
     ),
   );
 }
@@ -1135,10 +1135,11 @@ class _LiveTexturedFirstPersonViewState extends State<_LiveTexturedFirstPersonVi
 class _LiveFirstPersonPainter extends CustomPainter {
   _LiveFirstPersonPainter({required this.chunks, required this.playerX, required this.playerY,
     required this.playerZ, required this.yaw, required this.pitch,
-    required this.textures});
+    required this.textures, required this.facePaths});
   final Map<String, dynamic> chunks;
   final double playerX, playerY, playerZ, yaw, pitch;
-  final Map<int, _TexturePixels> textures;
+  final Map<String, _TexturePixels> textures;
+  final Map<int, Map<String, String>> facePaths;
 
   Color _blockColor(int state, double shade) {
     final hue = ((state * 47 + 95) % 360).toDouble();
@@ -1228,22 +1229,39 @@ class _LiveFirstPersonPainter extends CustomPainter {
           final state = section?[(ly*256)+(lz*16)+lx];
           if (state != null) {
             final shade = (1.0 - distance/100) * (dy.abs() > .72 ? 1.12 : (dx.abs() > .72 ? .82 : 1.0));
-            final texture = textures[state];
+            final fx = hitX - hitX.floorToDouble();
+            final fy = hitY - hitY.floorToDouble();
+            final fz = hitZ - hitZ.floorToDouble();
+            final ex = dx > 0 ? fx : 1 - fx;
+            final ey = dy > 0 ? fy : 1 - fy;
+            final ez = dz > 0 ? fz : 1 - fz;
+            String face;
+            if (ex <= ey && ex <= ez) {
+              face = dx > 0 ? 'west' : 'east';
+            } else if (ey <= ex && ey <= ez) {
+              face = dy > 0 ? 'down' : 'up';
+            } else {
+              face = dz > 0 ? 'north' : 'south';
+            }
+            final faces = facePaths[state] ?? const <String, String>{};
+            final path = faces[face] ?? faces['side'] ?? faces['all'] ??
+                faces['up'] ?? (faces.isEmpty ? null : faces.values.first);
+            final texture = path == null ? null : textures[path];
             if (texture != null) {
               final ax = dx.abs(), ay = dy.abs(), az = dz.abs();
               final hitX = eyeX + dx * distance;
               final hitY = eyeY + dy * distance;
               final hitZ = eyeZ + dz * distance;
               double u, v;
-              if (ax >= ay && ax >= az) {
-                u = hitZ - hitZ.floorToDouble();
-                v = 1.0 - (hitY - hitY.floorToDouble());
-              } else if (ay >= ax && ay >= az) {
-                u = hitX - hitX.floorToDouble();
-                v = hitZ - hitZ.floorToDouble();
+              if (face == 'up' || face == 'down') {
+                u = fx;
+                v = face == 'up' ? fz : 1.0 - fz;
+              } else if (face == 'east' || face == 'west') {
+                u = face == 'west' ? fz : 1.0 - fz;
+                v = 1.0 - fy;
               } else {
-                u = hitX - hitX.floorToDouble();
-                v = 1.0 - (hitY - hitY.floorToDouble());
+                u = face == 'south' ? fx : 1.0 - fx;
+                v = 1.0 - fy;
               }
               color = texture.sample(u, v);
               final factor = shade.clamp(0.25, 1.15).toDouble();

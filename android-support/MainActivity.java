@@ -5,6 +5,7 @@ import android.os.Looper;
 
 import java.net.InetSocketAddress;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -27,6 +28,7 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.Serverbound
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.inventory.ServerboundContainerClickPacket;
 import org.geysermc.mcprotocollib.protocol.data.game.inventory.ContainerActionType;
 import org.geysermc.mcprotocollib.protocol.data.game.inventory.ClickItemAction;
+import org.geysermc.mcprotocollib.protocol.data.game.item.ItemStack;
 
 public class MainActivity extends FlutterActivity {
     private static final String CHANNEL = "masterme4a/bot_control";
@@ -114,14 +116,22 @@ public class MainActivity extends FlutterActivity {
                         route.stage = 2;
                         return;
                     }
+                    ItemStack clickedItem = content.getItems()[protocolSlotIndex];
+                    if (clickedItem == null) {
+                        emit(botId, "Слот №" + visibleSlotNumber + " пуст. Авто-выбор остановлен.", "error");
+                        route.stage = 2;
+                        return;
+                    }
+                    Map<Integer, ItemStack> changedSlots = new HashMap<>();
+                    changedSlots.put(protocolSlotIndex, null);
                     current.send(new ServerboundContainerClickPacket(
                             content.getContainerId(),
                             content.getStateId(),
                             protocolSlotIndex,
                             ContainerActionType.CLICK_ITEM,
                             ClickItemAction.LEFT_CLICK,
-                            null,
-                            Collections.emptyMap()
+                            clickedItem,
+                            changedSlots
                     ));
                     route.lastClickedContainerId = content.getContainerId();
                     route.stage++;

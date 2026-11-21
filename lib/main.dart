@@ -246,7 +246,7 @@ class _DashboardState extends State<Dashboard> {
         'host': address,
         'port': serverPort,
       });
-      notice('Подключение профиля \${active + 1} запущено.');
+      notice('Подключение профиля ' + (active + 1).toString() + ' запущено.');
     } on PlatformException catch (error) {
       setState(() => botMessages[active] = error.message ?? 'Ошибка подключения');
       notice(error.message ?? 'Не удалось запустить бота.');

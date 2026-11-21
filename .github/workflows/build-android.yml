@@ -53,6 +53,10 @@ jobs:
               text += "\nandroid {\n    buildTypes {\n        release {\n            minifyEnabled false\n            shrinkResources false\n        }\n    }\n}\n"
           p.write_text(text)
           PY
+      - name: Build vanilla Minecraft 1.21.4 texture atlas
+        run: |
+          python3 -m pip install --quiet pillow
+          python3 tools/build_minecraft_textures.py
       - name: Get dependencies
         run: flutter pub get
       - name: Build release APK

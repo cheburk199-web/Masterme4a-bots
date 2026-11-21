@@ -243,6 +243,7 @@ public class MainActivity extends FlutterActivity {
                             if (slotUpdate.getContainerId() == 0) {
                                 emitInventorySlot(botId, slotUpdate.getSlot(), slotUpdate.getItem());
                             }
+                        }
                     }
 
                     @Override

@@ -11,17 +11,17 @@ else
   exit 1
 fi
 
-SETTINGS=""
-if [[ -f android/settings.gradle.kts ]]; then
-  SETTINGS="android/settings.gradle.kts"
-elif [[ -f android/settings.gradle ]]; then
-  SETTINGS="android/settings.gradle"
+ROOT_GRADLE=""
+if [[ -f android/build.gradle.kts ]]; then
+  ROOT_GRADLE="android/build.gradle.kts"
+elif [[ -f android/build.gradle ]]; then
+  ROOT_GRADLE="android/build.gradle"
 else
-  echo "Android settings Gradle file not found" >&2
+  echo "Android root Gradle file not found" >&2
   exit 1
 fi
 
-python3 - "$SETTINGS" <<'PY_REPOSITORY'
+python3 - "$ROOT_GRADLE" <<'PY_REPOSITORY'
 from pathlib import Path
 import re
 import sys
@@ -34,17 +34,22 @@ if repo not in content:
         line = '        maven("https://repo.opencollab.dev/main/")'
     else:
         line = "        maven { url 'https://repo.opencollab.dev/main/' }"
-    pattern = r"(dependencyResolutionManagement\s*\{[\s\S]*?repositories\s*\{)"
-    updated, count = re.subn(pattern, lambda match: match.group(1) + "\n" + line, content, count=1)
-    if count != 1:
-        raise SystemExit("Could not find dependencyResolutionManagement.repositories in " + str(path))
-    path.write_text(updated)
+    pattern = r"(allprojects\\s*\\{\\s*repositories\\s*\\{)"
+    updated, count = re.subn(pattern, lambda match: match.group(1) + "\\n" + line, content, count=1)
+    if count == 1:
+        path.write_text(updated)
+    else:
+        if path.name.endswith(".kts"):
+            addition = '\\nallprojects { repositories { maven("https://repo.opencollab.dev/main/") } }\\n'
+        else:
+            addition = "\\nallprojects { repositories { maven { url 'https://repo.opencollab.dev/main/' } } }\\n"
+        path.write_text(content + addition)
 PY_REPOSITORY
 
 if ! grep -q "org.geysermc.mcprotocollib:protocol" "$APP_GRADLE"; then
   if grep -q '^[[:space:]]*dependencies[[:space:]]*{' "$APP_GRADLE"; then
     if [[ "$APP_GRADLE" == *.kts ]]; then
-      sed -i '/^[[:space:]]*dependencies[[:space:]]*{/a\    implementation("org.geysermc.mcprotocollib:protocol:1.21.4-1")' "$APP_GRADLE"
+      sed -i '/^[[:space:]]*dependencies[[:space:]]*{/a\\    implementation("org.geysermc.mcprotocollib:protocol:1.21.4-1")' "$APP_GRADLE"
     else
       sed -i "/^[[:space:]]*dependencies[[:space:]]*{/a\\    implementation 'org.geysermc.mcprotocollib:protocol:1.21.4-1'" "$APP_GRADLE"
     fi
@@ -69,14 +74,15 @@ if ! grep -q "org.geysermc.mcprotocollib:protocol:1.21.4-1" "$APP_GRADLE"; then
   echo "MCProtocolLib dependency was not added to $APP_GRADLE" >&2
   exit 1
 fi
-if ! grep -q "repo.opencollab.dev/main" "$SETTINGS"; then
-  echo "OpenCollab Maven repository was not added to $SETTINGS" >&2
+if ! grep -q "repo.opencollab.dev/main" "$ROOT_GRADLE"; then
+  echo "OpenCollab Maven repository was not added to $ROOT_GRADLE" >&2
   exit 1
 fi
+
 echo "Gradle dependency:"
 grep -n "org.geysermc.mcprotocollib:protocol" "$APP_GRADLE"
 echo "Maven repository:"
-grep -n "repo.opencollab.dev/main" "$SETTINGS"
+grep -n "repo.opencollab.dev/main" "$ROOT_GRADLE"
 
 mkdir -p android/app/src/main/java/com/example/masterme4a_bot_control
 cp android-support/MainActivity.java android/app/src/main/java/com/example/masterme4a_bot_control/MainActivity.java
@@ -84,7 +90,7 @@ rm -f android/app/src/main/kotlin/com/example/masterme4a_bot_control/MainActivit
 
 MANIFEST="android/app/src/main/AndroidManifest.xml"
 if ! grep -q 'android.permission.INTERNET' "$MANIFEST"; then
-  sed -i '/<manifest[^>]*>/a\    <uses-permission android:name="android.permission.INTERNET" />' "$MANIFEST"
+  sed -i '/<manifest[^>]*>/a\\    <uses-permission android:name="android.permission.INTERNET" />' "$MANIFEST"
 fi
 
 echo "Configured MCProtocolLib 1.21.4-1 and native bot bridge."

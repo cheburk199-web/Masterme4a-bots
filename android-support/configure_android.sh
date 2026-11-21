@@ -34,8 +34,8 @@ if repo not in content:
         line = '        maven("https://repo.opencollab.dev/main/")'
     else:
         line = "        maven { url 'https://repo.opencollab.dev/main/' }"
-    pattern = r"(dependencyResolutionManagement\\s*\\{[\\s\\S]*?repositories\\s*\\{)"
-    updated, count = re.subn(pattern, lambda match: match.group(1) + "\\n" + line, content, count=1)
+    pattern = r"(dependencyResolutionManagement\s*\{[\s\S]*?repositories\s*\{)"
+    updated, count = re.subn(pattern, lambda match: match.group(1) + "\n" + line, content, count=1)
     if count != 1:
         raise SystemExit("Could not find dependencyResolutionManagement.repositories in " + str(path))
     path.write_text(updated)

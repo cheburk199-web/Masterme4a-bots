@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -744,11 +746,11 @@ class _LiveWorldScreenState extends State<LiveWorldScreen> {
                 clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(color: const Color(0xFF15111E), borderRadius: BorderRadius.circular(18), border: Border.all(color: purple.withOpacity(.55))),
                 child: Stack(children: [
-                  Positioned.fill(child: CustomPaint(painter: _LiveFirstPersonPainter(
+                  Positioned.fill(child: _LiveTexturedFirstPersonView(
                     chunks: chunks, playerX: x, playerY: y, playerZ: z,
                     yaw: (w['yaw'] as num? ?? 0).toDouble(),
                     pitch: (w['pitch'] as num? ?? 0).toDouble(),
-                  ))),
+                  )),
                   const Center(child: IgnorePointer(child: Text('+', style: TextStyle(color: Colors.white, fontSize: 19, shadows: [Shadow(color: Colors.black, blurRadius: 5)])))),
                   Positioned(left: 12, top: 12, child: Text('BOT ${widget.botId + 1} • ${w['loadedChunks'] ?? 0} CHUNKS', style: const TextStyle(color: purple, fontSize: 11))),
                   Positioned(right: 12, top: 12, child: Text('FIRST PERSON', style: TextStyle(color: connected ? Colors.greenAccent : Colors.redAccent, fontWeight: FontWeight.bold))),
@@ -1006,14 +1008,139 @@ class InventorySlotTile extends StatelessWidget {
   }
 }
 
+class _TexturePixels {
+  const _TexturePixels(this.width, this.height, this.rgba);
+  final int width, height;
+  final Uint8List rgba;
+
+  Color sample(double u, double v) {
+    final x = (u.clamp(0.0, 0.999999) * width).floor();
+    final y = (v.clamp(0.0, 0.999999) * height).floor();
+    final i = (y * width + x) * 4;
+    return Color.fromARGB(rgba[i + 3], rgba[i], rgba[i + 1], rgba[i + 2]);
+  }
+
+  Color get average {
+    var r = 0, g = 0, b = 0, n = 0;
+    final step = math.max(4, (width * height ~/ 64));
+    for (var i = 0; i < rgba.length; i += step * 4) {
+      r += rgba[i]; g += rgba[i + 1]; b += rgba[i + 2]; n++;
+    }
+    if (n == 0) return Colors.grey;
+    return Color.fromARGB(255, r ~/ n, g ~/ n, b ~/ n);
+  }
+}
+
+class _LiveTexturedFirstPersonView extends StatefulWidget {
+  const _LiveTexturedFirstPersonView({
+    required this.chunks, required this.playerX, required this.playerY,
+    required this.playerZ, required this.yaw, required this.pitch,
+  });
+  final Map<String, dynamic> chunks;
+  final double playerX, playerY, playerZ, yaw, pitch;
+
+  @override
+  State<_LiveTexturedFirstPersonView> createState() => _LiveTexturedFirstPersonViewState();
+}
+
+class _LiveTexturedFirstPersonViewState extends State<_LiveTexturedFirstPersonView> {
+  Map<int, String> _paths = {};
+  final Map<int, _TexturePixels> _textures = {};
+  final Set<int> _loading = {};
+  bool _lookupLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLookup();
+  }
+
+  @override
+  void didUpdateWidget(covariant _LiveTexturedFirstPersonView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.chunks != widget.chunks || oldWidget.playerX != widget.playerX ||
+        oldWidget.playerY != widget.playerY || oldWidget.playerZ != widget.playerZ) {
+      _loadVisibleTextures();
+    }
+  }
+
+  Future<void> _loadLookup() async {
+    try {
+      final raw = await rootBundle.loadString('assets/minecraft/state_texture_lookup.json');
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+      final states = Map<String, dynamic>.from(json['states'] as Map);
+      _paths = {for (final e in states.entries) int.parse(e.key): e.value.toString()};
+      _lookupLoaded = true;
+      await _loadVisibleTextures();
+    } catch (_) {
+      _lookupLoaded = true;
+    }
+  }
+
+  Future<void> _loadVisibleTextures() async {
+    if (!_lookupLoaded) return;
+    final wanted = <int>{};
+    final pcx = (widget.playerX / 16).floor();
+    final pcz = (widget.playerZ / 16).floor();
+    for (final entry in widget.chunks.entries) {
+      final c = entry.key.split(',');
+      if (c.length != 2) continue;
+      final cx = int.tryParse(c[0]), cz = int.tryParse(c[1]);
+      if (cx == null || cz == null || (cx-pcx).abs() > 3 || (cz-pcz).abs() > 3) continue;
+      final data = Map<String, dynamic>.from(entry.value as Map);
+      for (final sectionRaw in (data['sections'] as List? ?? const [])) {
+        final section = Map<String, dynamic>.from(sectionRaw as Map);
+        for (final raw in (section['states'] as List? ?? const [])) {
+          final id = (raw as num).toInt();
+          if (id != 0 && _paths.containsKey(id) && !_textures.containsKey(id)) wanted.add(id);
+        }
+      }
+    }
+    for (final id in wanted.take(220)) {
+      if (!_loading.add(id)) continue;
+      _decodeTexture(id);
+    }
+  }
+
+  Future<void> _decodeTexture(int id) async {
+    try {
+      final data = await rootBundle.load('assets/minecraft/${_paths[id]}');
+      final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
+      final frame = await codec.getNextFrame();
+      final bytes = await frame.image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (bytes != null && mounted) {
+        _textures[id] = _TexturePixels(frame.image.width, frame.image.height, bytes.buffer.asUint8List());
+        setState(() {});
+      }
+      frame.image.dispose();
+      codec.dispose();
+    } catch (_) {
+      // Keep the fallback block shading if a resource-pack texture is unavailable.
+    } finally {
+      _loading.remove(id);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+    painter: _LiveFirstPersonPainter(
+      chunks: widget.chunks, playerX: widget.playerX, playerY: widget.playerY,
+      playerZ: widget.playerZ, yaw: widget.yaw, pitch: widget.pitch,
+      textures: _textures,
+    ),
+  );
+}
+
 /// Live first-person voxel raycaster. It renders the actual sparse 3D block-state
 /// data received for this bot. The current pass uses a higher-resolution color preview;
 /// vanilla PNG textures and block-model face mapping are a separate renderer step.
 class _LiveFirstPersonPainter extends CustomPainter {
   _LiveFirstPersonPainter({required this.chunks, required this.playerX, required this.playerY,
-    required this.playerZ, required this.yaw, required this.pitch});
+    required this.playerZ, required this.yaw, required this.pitch,
+    required this.textures});
   final Map<String, dynamic> chunks;
   final double playerX, playerY, playerZ, yaw, pitch;
+  final Map<int, _TexturePixels> textures;
 
   Color _blockColor(int state, double shade) {
     final hue = ((state * 47 + 95) % 360).toDouble();
@@ -1103,7 +1230,29 @@ class _LiveFirstPersonPainter extends CustomPainter {
           final state = section?[(ly*256)+(lz*16)+lx];
           if (state != null) {
             final shade = (1.0 - distance/100) * (dy.abs() > .72 ? 1.12 : (dx.abs() > .72 ? .82 : 1.0));
-            color = _blockColor(state, shade);
+            final texture = textures[state];
+            if (texture != null) {
+              final ax = dx.abs(), ay = dy.abs(), az = dz.abs();
+              double u, v;
+              if (ax >= ay && ax >= az) {
+                u = wz - wz.floorToDouble();
+                v = 1.0 - (wy - wy.floorToDouble());
+              } else if (ay >= ax && ay >= az) {
+                u = wx - wx.floorToDouble();
+                v = wz - wz.floorToDouble();
+              } else {
+                u = wx - wx.floorToDouble();
+                v = 1.0 - (wy - wy.floorToDouble());
+              }
+              color = texture.sample(u, v);
+              final factor = shade.clamp(0.25, 1.15).toDouble();
+              color = Color.fromARGB(color.alpha,
+                (color.red * factor).clamp(0, 255).round(),
+                (color.green * factor).clamp(0, 255).round(),
+                (color.blue * factor).clamp(0, 255).round());
+            } else {
+              color = _blockColor(state, shade);
+            }
             break;
           }
           distance += .22;

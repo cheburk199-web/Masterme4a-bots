@@ -25,6 +25,21 @@ jobs:
         run: flutter create . --platforms=android
       - name: Configure native Minecraft protocol bridge
         run: bash android-support/configure_android.sh
+      - name: Disable R8 shrinking for optional MCProtocolLib classes
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path('android/app/build.gradle.kts')
+          if not p.exists():
+              p = Path('android/app/build.gradle')
+          text = p.read_text()
+          if p.suffix == '.kts':
+              text += '\nandroid {\n    buildTypes {\n        release {\n            isMinifyEnabled = false\n        isShrinkResources = false\n        proguardFiles.clear()\n        proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")\n        }\n    }\n}\n'
+          else:
+              text += "\nandroid {\n    buildTypes {\n        release {\n            minifyEnabled false\n            shrinkResources false\n        }\n    }\n}\n"
+          p.write_text(text)
+          PY
       - name: Get dependencies
         run: flutter pub get
       - name: Build release APK

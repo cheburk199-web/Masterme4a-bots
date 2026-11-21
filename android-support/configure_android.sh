@@ -21,13 +21,25 @@ else
   exit 1
 fi
 
-if ! grep -q "repo.opencollab.dev/main" "$SETTINGS"; then
-  if [[ "$SETTINGS" == *.kts ]]; then
-    sed -i '/mavenCentral()/a\        maven("https://repo.opencollab.dev/main/")' "$SETTINGS"
-  else
-    sed -i "/mavenCentral()/a\\        maven { url 'https://repo.opencollab.dev/main/' }" "$SETTINGS"
-  fi
-fi
+python3 - "$SETTINGS" <<'PY_REPOSITORY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+content = path.read_text()
+repo = "https://repo.opencollab.dev/main/"
+if repo not in content:
+    if path.name.endswith(".kts"):
+        line = '        maven("https://repo.opencollab.dev/main/")'
+    else:
+        line = "        maven { url 'https://repo.opencollab.dev/main/' }"
+    pattern = r"(dependencyResolutionManagement\\s*\\{[\\s\\S]*?repositories\\s*\\{)"
+    updated, count = re.subn(pattern, lambda match: match.group(1) + "\\n" + line, content, count=1)
+    if count != 1:
+        raise SystemExit("Could not find dependencyResolutionManagement.repositories in " + str(path))
+    path.write_text(updated)
+PY_REPOSITORY
 
 if ! grep -q "org.geysermc.mcprotocollib:protocol" "$APP_GRADLE"; then
   if grep -q '^[[:space:]]*dependencies[[:space:]]*{' "$APP_GRADLE"; then

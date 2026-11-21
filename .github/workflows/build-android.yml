@@ -28,22 +28,23 @@ jobs:
         run: |
           python3 <<'PY'
           from pathlib import Path
+          import re
           p = Path("android/settings.gradle.kts")
           if not p.exists():
               p = Path("android/settings.gradle")
           s = p.read_text()
-          if p.suffix == ".kts":
-              repos = '    repositories {\n        google()\n        mavenCentral()\n        gradlePluginPortal()\n    }'
-          else:
-              repos = '    repositories {\n        google()\n        mavenCentral()\n        gradlePluginPortal()\n    }'
-          if "pluginManagement" in s:
-              import re
-              s, n = re.subn(r"pluginManagement\\s*\\{\\s*repositories\\s*\\{[^}]*\\}\\s*\\}", "pluginManagement {\\n" + repos + "\\n}", s, count=1, flags=re.S)
-              if n == 0:
-                  raise SystemExit("Could not update pluginManagement repositories")
-          else:
-              s = "pluginManagement {\\n" + repos + "\\n}\\n" + s
+          repos = """    repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }"""
+          pattern = r"pluginManagement\s*\{\s*repositories\s*\{[^}]*\}\s*\}"
+          replacement = "pluginManagement {\n" + repos + "\n}"
+          s, count = re.subn(pattern, lambda _: replacement, s, count=1, flags=re.S)
+          if count == 0:
+              s = replacement + "\n" + s
           p.write_text(s)
+          print("Gradle plugin repositories configured")
           PY
       - name: Configure native Minecraft protocol bridge
         run: bash android-support/configure_android.sh

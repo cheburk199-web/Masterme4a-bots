@@ -119,7 +119,7 @@ permissions = [
 for permission in permissions:
     if permission not in text:
         entry = '    <uses-permission android:name="' + permission + '" />'
-        text = re.sub(r"(<manifest\\b[^>]*>)", r"\\1\\n" + entry, text, count=1)
+        text = re.sub(r"(<manifest\b[^>]*>)", r"\1\n" + entry, text, count=1)
 
 service = """    <service
         android:name="com.example.masterme4a_bot_control.BotKeepAliveService"

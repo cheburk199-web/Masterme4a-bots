@@ -148,6 +148,8 @@ class _DashboardState extends State<Dashboard> {
   static const MethodChannel _botChannel = MethodChannel('masterme4a/bot_control');
   final bots = List.generate(5, (i) => BotProfile(i + 1));
   final botMessages = List<String>.filled(5, 'Отключён');
+  final botActivity = List.generate(5, (_) => <String>[]);
+  final commandController = TextEditingController();
   final host = TextEditingController(text: 'lite.holyworld.me');
   final port = TextEditingController(text: '25565');
   int active = 0;
@@ -163,7 +165,19 @@ class _DashboardState extends State<Dashboard> {
   void initState() {
     super.initState();
     _botChannel.setMethodCallHandler((call) async {
-      if (call.method == 'botStatus' && mounted) {
+      if (call.method == 'botEvent' && mounted) {
+        final data = Map<String, dynamic>.from(call.arguments as Map);
+        final id = data['botId'] as int?;
+        final message = data['message']?.toString() ?? 'Событие';
+        if (id != null && id >= 0 && id < botActivity.length) {
+          final now = DateTime.now();
+          final time = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+          setState(() {
+            botActivity[id].add('$time • $message');
+            if (botActivity[id].length > 80) botActivity[id].removeRange(0, botActivity[id].length - 80);
+          });
+        }
+      } else if (call.method == 'botStatus' && mounted) {
         final data = Map<String, dynamic>.from(call.arguments as Map);
         final id = data['botId'] as int?;
         final message = data['message']?.toString() ?? 'Нет данных';
@@ -179,6 +193,7 @@ class _DashboardState extends State<Dashboard> {
     for (final bot in bots) { bot.nickname.dispose(); }
     host.dispose();
     port.dispose();
+    commandController.dispose();
     super.dispose();
   }
 
@@ -253,6 +268,17 @@ class _DashboardState extends State<Dashboard> {
     } catch (error) {
       setState(() => botMessages[active] = 'Ошибка: $error');
       notice('Ошибка запуска: $error');
+    }
+  }
+
+  Future<void> sendBotCommand() async {
+    final command = commandController.text.trim();
+    if (command.isEmpty) return;
+    try {
+      await _botChannel.invokeMethod<bool>('sendCommand', {'botId': active, 'command': command});
+      commandController.clear();
+    } on PlatformException catch (error) {
+      notice(error.message ?? 'Не удалось отправить команду');
     }
   }
 
@@ -363,6 +389,49 @@ class _DashboardState extends State<Dashboard> {
             SizedBox(width: double.infinity, child: OutlinedButton.icon(
               onPressed: disconnectCurrent, icon: const Icon(Icons.link_off),
               label: const Text('Отключить профиль'))),
+          ]),
+        )),
+        const SizedBox(height: 14),
+        Card(color: panel, child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('КОМАНДЫ БОТА', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            TextField(
+              controller: commandController,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => sendBotCommand(),
+              decoration: InputDecoration(
+                hintText: '/lite, /hub, /home',
+                prefixIcon: const Icon(Icons.terminal),
+                suffixIcon: IconButton(icon: const Icon(Icons.send, color: purple), onPressed: sendBotCommand),
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text('Команда отправляется активному профилю. Можно вводить со слэшем.',
+              style: TextStyle(color: Colors.white70, fontSize: 12)),
+          ]),
+        )),
+        const SizedBox(height: 14),
+        Card(color: panel, child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('СОБЫТИЯ БОТА', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Container(
+              height: 180, width: double.infinity, padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: deepPurple, borderRadius: BorderRadius.circular(10)),
+              child: botActivity[active].isEmpty
+                ? const Text('Здесь появятся сообщения сервера и действия бота.', style: TextStyle(color: Colors.white60))
+                : ListView.builder(
+                    itemCount: botActivity[active].length,
+                    itemBuilder: (context, index) => Padding(
+                      padding: const EdgeInsets.only(bottom: 5),
+                      child: Text(botActivity[active][index], style: const TextStyle(fontSize: 12)),
+                    ),
+                  ),
+            ),
           ]),
         )),
         const SizedBox(height: 14),

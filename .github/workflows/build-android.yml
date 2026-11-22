@@ -75,10 +75,21 @@ jobs:
               text += "\nandroid {\n    buildTypes {\n        release {\n            minifyEnabled false\n            shrinkResources false\n        }\n    }\n}\n"
           p.write_text(text)
           PY
-      - name: Build vanilla Minecraft 1.21.4 texture atlas
+      - name: Skip optional Minecraft texture atlas for reliable APK build
         run: |
-          python3 -m pip install --quiet pillow
-          python3 tools/build_minecraft_textures.py
+          # The atlas generator currently takes several hours on GitHub runners.
+          # The live-world renderer already has a color fallback when textures
+          # are absent, so omit optional generated assets and build the APK.
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path("pubspec.yaml")
+          text = p.read_text()
+          text = re.sub(r"(?m)^  assets:\n    - assets/minecraft/\n?", "", text)
+          p.write_text(text)
+          Path("assets/minecraft").mkdir(parents=True, exist_ok=True)
+          print("Optional texture atlas skipped; using built-in block color fallback")
+          PY
       - name: Get dependencies
         run: flutter pub get
       - name: Build release APK

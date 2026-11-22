@@ -1192,10 +1192,9 @@ class _LiveFirstPersonPainter extends CustomPainter {
       }
     }
 
-    // Render at a substantially denser internal resolution. The old 120x68
-    // buffer made every voxel look like a large square on modern phone screens.
-    // 240x135 keeps the 16:9 ray grid crisp without an excessive mobile CPU cost.
-    const rw = 240, rh = 135;
+    // Render at a higher internal resolution to reduce visible ray-grid pixels.
+    // 360x202 improves clarity while keeping the mobile raycast workload manageable.
+    const rw = 360, rh = 202;
     final pixelW = size.width / rw, pixelH = size.height / rh;
     final yawR = yaw * math.pi / 180, pitchR = pitch * math.pi / 180;
     final syaw = math.sin(yawR), cyaw = math.cos(yawR);

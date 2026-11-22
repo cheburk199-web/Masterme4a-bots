@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build vanilla Minecraft 1.21.4 textures + block-state/model lookup assets."""
 import json
+import os
 import urllib.request
 import zipfile
 from functools import lru_cache
@@ -284,8 +285,19 @@ def main():
                 "elements": len(parsed.get("elements", [])),
             }
 
-    faithful_pack = install_faithful_textures()
-    # Refresh dimensions after overlay so the manifest describes Faithful PNGs.
+    if os.environ.get("MASTERME4A_FAITHFUL_TEXTURES") == "1":
+        faithful_pack = install_faithful_textures()
+    else:
+        # Use authentic Mojang vanilla textures by default. Faithful is an
+        # optional high-resolution overlay because downloading/verifying the
+        # entire pack can make CI builds take too long.
+        faithful_pack = {
+            "name": "Minecraft Vanilla",
+            "version": VERSION,
+            "source": "Official Minecraft client JAR",
+            "texturesOverlaid": 0,
+        }
+    # Refresh dimensions after optional overlay.
     texture_manifest = {}
     for path in sorted(TEXTURE_ROOT.rglob("*.png")):
         relative = path.relative_to(TEXTURE_ROOT).as_posix()
@@ -384,7 +396,7 @@ def main():
     (ROOT / "block_textures.json").write_text(
         json.dumps({
             "minecraftVersion": VERSION,
-            "format": "faithful-32x-overlay",
+            "format": "vanilla" if faithful_pack.get("name") == "Minecraft Vanilla" else "faithful-32x-overlay",
             "resourcePack": faithful_pack,
             "textureCount": len(texture_manifest),
             "textures": texture_manifest,

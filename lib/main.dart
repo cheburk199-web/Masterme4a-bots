@@ -1229,6 +1229,9 @@ class _LiveFirstPersonPainter extends CustomPainter {
           final state = section?[(ly*256)+(lz*16)+lx];
           if (state != null) {
             final shade = (1.0 - distance/100) * (dy.abs() > .72 ? 1.12 : (dx.abs() > .72 ? .82 : 1.0));
+            final hitX = eyeX + dx * distance;
+            final hitY = eyeY + dy * distance;
+            final hitZ = eyeZ + dz * distance;
             final fx = hitX - hitX.floorToDouble();
             final fy = hitY - hitY.floorToDouble();
             final fz = hitZ - hitZ.floorToDouble();
@@ -1249,9 +1252,6 @@ class _LiveFirstPersonPainter extends CustomPainter {
             final texture = path == null ? null : textures[path];
             if (texture != null) {
               final ax = dx.abs(), ay = dy.abs(), az = dz.abs();
-              final hitX = eyeX + dx * distance;
-              final hitY = eyeY + dy * distance;
-              final hitZ = eyeZ + dz * distance;
               double u, v;
               if (face == 'up' || face == 'down') {
                 u = fx;
